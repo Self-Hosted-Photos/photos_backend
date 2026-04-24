@@ -221,3 +221,184 @@ async def test_upload_updates_user_storage_used(client, db):
     repo = SQLUserRepository(db)
     user = await repo.get_by_email("upload8@test.com")
     assert user.storage_used_bytes == len(jpeg)
+
+
+# ── GET /media ────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_list_media_returns_paginated_response(client, db):
+    token = await _create_active_user(client, db, "list1@test.com")
+    jpeg = _make_jpeg()
+
+    # Upload 3 photos
+    for _ in range(3):
+        await client.post(
+            "/api/v1/media/upload",
+            headers={"Authorization": f"Bearer {token}"},
+            files={"file": ("photo.jpg", io.BytesIO(jpeg), "image/jpeg")},
+        )
+
+    r = await client.get("/api/v1/media", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    body = r.json()
+    assert "data" in body
+    assert "meta" in body
+    assert body["meta"]["total"] == 3
+    assert body["meta"]["page"] == 1
+    assert len(body["data"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_list_media_pagination(client, db):
+    token = await _create_active_user(client, db, "list2@test.com")
+    jpeg = _make_jpeg()
+    for _ in range(5):
+        await client.post(
+            "/api/v1/media/upload",
+            headers={"Authorization": f"Bearer {token}"},
+            files={"file": ("photo.jpg", io.BytesIO(jpeg), "image/jpeg")},
+        )
+
+    r = await client.get(
+        "/api/v1/media?page=1&per_page=2",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["data"]) == 2
+    assert body["meta"]["total"] == 5
+    assert body["meta"]["has_next"] is True
+
+
+@pytest.mark.asyncio
+async def test_list_media_partial_location_bounds_returns_400(client, db):
+    token = await _create_active_user(client, db, "list3@test.com")
+
+    r = await client.get(
+        "/api/v1/media?lat_min=-34.0&lat_max=-33.8",  # missing lng_min, lng_max
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_list_media_unauthenticated_returns_401(client, db):
+    r = await client.get("/api/v1/media")
+    assert r.status_code == 401
+
+
+# ── GET /media/timeline ───────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_timeline_groups_by_month(client, db):
+    token = await _create_active_user(client, db, "tl1@test.com")
+
+    # Upload a photo with EXIF from March 2024
+    jpeg_mar = _make_jpeg_with_exif("2024:03:10 10:00:00")
+    # Upload a photo with EXIF from June 2024
+    jpeg_jun = _make_jpeg_with_exif("2024:06:20 10:00:00")
+    # Upload a photo with no EXIF (groups by upload month)
+    jpeg_plain = _make_jpeg()
+
+    for jpeg in [jpeg_mar, jpeg_jun, jpeg_plain]:
+        await client.post(
+            "/api/v1/media/upload",
+            headers={"Authorization": f"Bearer {token}"},
+            files={"file": ("photo.jpg", io.BytesIO(jpeg), "image/jpeg")},
+        )
+
+    r = await client.get("/api/v1/media/timeline", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    groups = r.json()
+    assert isinstance(groups, list)
+    assert len(groups) >= 2  # at least March and June groups
+    for g in groups:
+        assert "year" in g
+        assert "month" in g
+        assert "count" in g
+        assert "items" in g
+        assert g["count"] == len(g["items"])
+
+
+# ── GET /media/{id}/thumbnail ─────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_stream_thumbnail_returns_jpeg(client, db):
+    token = await _create_active_user(client, db, "thumb1@test.com")
+    jpeg = _make_jpeg()
+    upload = await client.post(
+        "/api/v1/media/upload",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"file": ("photo.jpg", io.BytesIO(jpeg), "image/jpeg")},
+    )
+    media_id = upload.json()["id"]
+
+    r = await client.get(
+        f"/api/v1/media/{media_id}/thumbnail",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/jpeg"
+    assert len(r.content) > 0
+
+
+@pytest.mark.asyncio
+async def test_stream_thumbnail_wrong_owner_returns_403(client, db):
+    token_a = await _create_active_user(client, db, "towner_a@test.com")
+    token_b = await _create_active_user(client, db, "towner_b@test.com")
+    jpeg = _make_jpeg()
+
+    upload = await client.post(
+        "/api/v1/media/upload",
+        headers={"Authorization": f"Bearer {token_a}"},
+        files={"file": ("photo.jpg", io.BytesIO(jpeg), "image/jpeg")},
+    )
+    media_id = upload.json()["id"]
+
+    r = await client.get(
+        f"/api/v1/media/{media_id}/thumbnail",
+        headers={"Authorization": f"Bearer {token_b}"},
+    )
+    assert r.status_code == 403
+
+
+# ── GET /media/{id}/stream ────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_stream_media_returns_full_content(client, db):
+    token = await _create_active_user(client, db, "stream1@test.com")
+    jpeg = _make_jpeg()
+    upload = await client.post(
+        "/api/v1/media/upload",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"file": ("photo.jpg", io.BytesIO(jpeg), "image/jpeg")},
+    )
+    media_id = upload.json()["id"]
+
+    r = await client.get(
+        f"/api/v1/media/{media_id}/stream",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200
+    assert r.content == jpeg
+    assert "accept-ranges" in r.headers
+
+
+@pytest.mark.asyncio
+async def test_stream_media_range_request_returns_206(client, db):
+    token = await _create_active_user(client, db, "stream2@test.com")
+    jpeg = _make_jpeg()
+    upload = await client.post(
+        "/api/v1/media/upload",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"file": ("photo.jpg", io.BytesIO(jpeg), "image/jpeg")},
+    )
+    media_id = upload.json()["id"]
+
+    r = await client.get(
+        f"/api/v1/media/{media_id}/stream",
+        headers={"Authorization": f"Bearer {token}", "Range": "bytes=0-99"},
+    )
+    assert r.status_code == 206
+    assert len(r.content) == 100
+    assert r.headers["content-range"].startswith("bytes 0-99/")

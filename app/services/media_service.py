@@ -1,6 +1,7 @@
 import io
 import uuid
-from dataclasses import dataclass
+from collections import defaultdict
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
 import piexif
@@ -10,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.domain.events import MediaUploadedEvent
 from app.domain.models.media import Media, MediaStatus, MediaType
-from app.exceptions import InvalidStateError, ResourceNotFoundError
+from app.exceptions import AuthorizationError, InvalidStateError, ResourceNotFoundError
 from app.infrastructure.repositories.media_repo import SQLMediaRepository
 from app.infrastructure.repositories.user_repo import SQLUserRepository
 from app.infrastructure.storage.base import StorageBackend
@@ -35,6 +36,29 @@ _MIME_TO_EXT: dict[str, str] = {
 }
 
 _THUMBNAIL_SIZE = 320
+
+
+@dataclass
+class PaginatedResult:
+    items: list[Media]
+    total: int
+    page: int
+    per_page: int
+
+    @property
+    def has_next(self) -> bool:
+        return (self.page * self.per_page) < self.total
+
+
+@dataclass
+class TimelineGroup:
+    year: int
+    month: int
+    items: list[Media] = field(default_factory=list)
+
+    @property
+    def count(self) -> int:
+        return len(self.items)
 
 
 @dataclass(frozen=True)
@@ -203,3 +227,77 @@ class MediaService:
         )
 
         return media
+
+    # ── Read operations ───────────────────────────────────────────────────────
+
+    async def list_media(
+        self,
+        user_id: uuid.UUID,
+        page: int = 1,
+        per_page: int = 50,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        lat_min: float | None = None,
+        lat_max: float | None = None,
+        lng_min: float | None = None,
+        lng_max: float | None = None,
+    ) -> PaginatedResult:
+        offset = (page - 1) * per_page
+        items = await self._media.get_by_owner(
+            owner_id=user_id,
+            limit=per_page,
+            offset=offset,
+            date_from=date_from,
+            date_to=date_to,
+            lat_min=lat_min,
+            lat_max=lat_max,
+            lng_min=lng_min,
+            lng_max=lng_max,
+        )
+        total = await self._media.count_by_owner(
+            owner_id=user_id,
+            date_from=date_from,
+            date_to=date_to,
+            lat_min=lat_min,
+            lat_max=lat_max,
+            lng_min=lng_min,
+            lng_max=lng_max,
+        )
+        return PaginatedResult(items=items, total=total, page=page, per_page=per_page)
+
+    async def get_timeline(self, user_id: uuid.UUID) -> list[TimelineGroup]:
+        all_media = await self._media.get_all_for_timeline(user_id)
+
+        groups: dict[tuple[int, int], TimelineGroup] = {}
+        for item in all_media:
+            if item.captured_at:
+                key = (item.captured_at.year, item.captured_at.month)
+            else:
+                key = (item.uploaded_at.year, item.uploaded_at.month)
+            if key not in groups:
+                groups[key] = TimelineGroup(year=key[0], month=key[1])
+            groups[key].items.append(item)
+
+        return [g for _, g in sorted(groups.items(), reverse=True)]
+
+    async def get_media(self, media_id: uuid.UUID, user_id: uuid.UUID) -> Media:
+        media = await self._media.get_by_id(media_id)
+        if not media:
+            raise ResourceNotFoundError("Media not found")
+        if media.owner_id != user_id:
+            raise AuthorizationError("Not allowed to access this media")
+        return media
+
+    async def read_file_bytes(self, path: str) -> bytes:
+        from app.exceptions import StorageError
+        try:
+            chunks = []
+            async for chunk in self._storage.read(path):
+                chunks.append(chunk)
+            return b"".join(chunks)
+        except Exception as exc:
+            raise ResourceNotFoundError(f"File not found: {path}") from exc
+
+    def read_stream(self, path: str):
+        """Return the async iterator from storage (for StreamingResponse)."""
+        return self._storage.read(path)

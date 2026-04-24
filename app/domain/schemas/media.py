@@ -23,3 +23,22 @@ class MediaResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class PaginationMeta(BaseModel):
+    page: int
+    per_page: int
+    total: int
+    has_next: bool
+
+
+class PaginatedMediaResponse(BaseModel):
+    data: list[MediaResponse]
+    meta: PaginationMeta
+
+
+class TimelineGroupResponse(BaseModel):
+    year: int
+    month: int
+    count: int
+    items: list[MediaResponse]

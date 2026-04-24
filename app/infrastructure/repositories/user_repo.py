@@ -1,7 +1,7 @@
 import uuid
 from abc import ABC, abstractmethod
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.models.user import EmailToken, RefreshToken, User, UserStatus
@@ -16,6 +16,12 @@ class UserRepository(ABC):
 
     @abstractmethod
     async def get_pending_users(self, limit: int, offset: int) -> list[User]: ...
+
+    @abstractmethod
+    async def count_by_status(self, status: UserStatus) -> int: ...
+
+    @abstractmethod
+    async def get_total_storage_used(self) -> int: ...
 
     @abstractmethod
     async def save(self, user: User) -> User: ...
@@ -53,6 +59,18 @@ class SQLUserRepository(UserRepository):
         await self._db.flush()
         await self._db.refresh(user)
         return user
+
+    async def count_by_status(self, status: UserStatus) -> int:
+        result = await self._db.execute(
+            select(func.count()).select_from(User).where(User.status == status)
+        )
+        return result.scalar_one()
+
+    async def get_total_storage_used(self) -> int:
+        result = await self._db.execute(
+            select(func.sum(User.storage_used_bytes))
+        )
+        return result.scalar_one_or_none() or 0
 
     async def delete(self, id: uuid.UUID) -> None:
         user = await self.get_by_id(id)

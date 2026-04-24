@@ -96,9 +96,10 @@ def _register_exception_handlers(app: FastAPI) -> None:
 
 
 def _register_routers(app: FastAPI) -> None:
-    from app.api.v1 import auth
+    from app.api.v1 import admin, auth
 
     app.include_router(auth.router, prefix="/api/v1")
+    app.include_router(admin.router, prefix="/api/v1")
 
     @app.get("/health", tags=["health"])
     async def health():

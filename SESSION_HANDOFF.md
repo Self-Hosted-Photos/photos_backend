@@ -12,27 +12,24 @@
 
 > Overwritten each session. Do not manually edit.
 
-**Last Updated:** 2026-04-18  
-**Sprint:** Sprint 1 — **ALL 3 BACKEND TASKS COMPLETE** ✅  
-**Tests:** 9/9 passing
+**Last Updated:** 2026-04-23  
+**Sprint:** Sprint 2 — S2-001 COMPLETE ✅  
+**Tests:** 18/18 passing
 
 ---
 
 ### ⏭️ Resume Here
 
-**Next task:** `S2-001` — Implement Admin user approval routes  
-**File to create:** `app/api/v1/admin.py` + `app/services/admin_service.py`  
-**Depends on:** S1-001 ✅, S1-002 ✅, S1-003 ✅ (all done)
+**Next task:** `S2-002` — Storage Abstraction + Local Disk  
+**Files to create:** `app/infrastructure/storage/base.py` + `app/infrastructure/storage/local.py`  
+**Depends on:** S2-001 ✅
 
-**First actions for S2-001:**
+**First actions for S2-002:**
 
-1. Create `app/services/admin_service.py` with `AdminService` class — methods: `get_pending_users()`, `approve_user(user_id, admin_id)`, `suspend_user(user_id)`, `get_stats()`
-2. Create `app/api/v1/admin.py` with 4 endpoints: `GET /admin/users/pending`, `POST /admin/users/{id}/approve`, `POST /admin/users/{id}/suspend`, `GET /admin/stats`
-3. All routes use `get_admin_user` dependency from `app/api/deps.py` (already built)
-4. `approve_user` must: call `user.approve()` domain method → save → call `EmailService.send_approval_notification()` → emit `UserApprovedEvent`
-5. Register `admin.router` in `app/main.py` `_register_routers()`
-
-**Critical before S2-001:** `photos_infra S1-001` (Docker Compose) must be done so PostgreSQL is running for `alembic upgrade head`.
+1. Create `app/infrastructure/storage/base.py` — `StorageBackend` ABC with methods: `save(file, path) -> str`, `delete(path) -> None`, `get_url(path) -> str`, `exists(path) -> bool`
+2. Create `app/infrastructure/storage/local.py` — `LocalStorageBackend(StorageBackend)` writing to `settings.storage_root/{originals,transcoded,thumbnails}/`
+3. Add `StorageBackend` to the DI layer (injectable via `Depends`)
+4. Tests should verify actual file I/O with a temp directory fixture
 
 ---
 
@@ -56,6 +53,15 @@
 - `app/domain/models/user.py` — `User`, `EmailToken`, `RefreshToken` SQLAlchemy ORM models + `UserRole`, `UserStatus`, `EmailTokenType` enums + domain methods (`approve()`, `suspend()`, `can_upload()`)
 - `app/domain/schemas/user.py` — `UserResponse`, `UserPublicProfile`, `StorageStats` Pydantic schemas
 
+#### S2-001 — Admin Approval Routes ✅ (18/18 tests passing)
+
+- `app/services/admin_service.py` — `AdminService` with `get_pending_users()`, `approve_user(user_id, admin_id)`, `suspend_user(user_id)`, `get_stats()`
+- `app/api/v1/admin.py` — 4 endpoints: `GET /admin/users/pending`, `POST /admin/users/{id}/approve`, `POST /admin/users/{id}/suspend`, `GET /admin/stats`
+- `app/infrastructure/repositories/user_repo.py` — added `count_by_status()` and `get_total_storage_used()` to both ABC and `SQLUserRepository`
+- `app/domain/schemas/user.py` — added `AdminStats` schema
+- `app/main.py` — registered `admin.router` under `/api/v1`
+- `tests/test_admin.py` — 9 tests covering: list pending, 403/401 auth enforcement, approve happy path, approve-already-active 422, approve 404, suspend happy path, suspend 404, stats shape
+
 #### S1-003 — Auth Endpoints ✅ (9/9 tests passing)
 
 - `app/api/v1/auth.py` — 8 endpoints: `POST /auth/register`, `POST /auth/login`, `GET /auth/verify-email`, `POST /auth/resend-verification`, `POST /auth/refresh`, `POST /auth/logout`, `POST /auth/forgot-password`, `POST /auth/reset-password`
@@ -76,7 +82,7 @@
 
 ### 🔄 In Progress
 
-_Nothing in progress._
+_Nothing in progress. S2-002 is next._
 
 ---
 
@@ -169,3 +175,4 @@ tests/
 | --- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------ | ---------------------------- |
 | 1   | 2026-04-18 | Repo-level handoff template created. No code yet.                                                                                                | `SESSION_HANDOFF.md` (created) | S1-001 FastAPI scaffold      |
 | 2   | 2026-04-18 | Sprint 1 complete: S1-001 scaffold, S1-002 Alembic+migration, S1-003 auth endpoints. 9/9 tests passing. Fixed .gitignore (was Node.js template). | 30+ files created              | S2-001 Admin approval routes |
+| 3   | 2026-04-23 | S2-001 complete: AdminService, 4 admin endpoints, count/stats repo methods, AdminStats schema. 18/18 tests passing. | admin_service.py, admin.py, user_repo.py, user.py (schemas), main.py, test_admin.py | S2-002 Storage abstraction + local disk |

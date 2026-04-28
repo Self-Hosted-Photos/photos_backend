@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings, get_settings
 from app.database import get_db
 from app.exceptions import AccountNotActiveError, AuthorizationError
+from app.infrastructure.storage.base import StorageBackend
+from app.infrastructure.storage.local import LocalStorageBackend
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -71,7 +73,17 @@ async def get_admin_user(
     return current_user
 
 
+def get_storage(settings: Annotated[Settings, Depends(get_settings)]) -> StorageBackend:
+    if settings.storage_backend == "local":
+        return LocalStorageBackend(
+            storage_root=settings.storage_root,
+            base_url=settings.base_url,
+        )
+    raise ValueError(f"Unknown storage backend: {settings.storage_backend!r}")
+
+
 # Convenience type aliases
 CurrentUser = Annotated[dict, Depends(get_current_user)]
 AdminUser = Annotated[dict, Depends(get_admin_user)]
 DB = Annotated[AsyncSession, Depends(get_db)]
+Storage = Annotated[StorageBackend, Depends(get_storage)]

@@ -16,12 +16,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # ── Enum types ────────────────────────────────────────────────────────────
-    op.execute("CREATE TYPE user_role AS ENUM ('user', 'admin')")
-    op.execute("CREATE TYPE user_status AS ENUM ('pending', 'active', 'suspended')")
-    op.execute("CREATE TYPE email_token_type AS ENUM ('verification', 'password_reset')")
-
     # ── users ─────────────────────────────────────────────────────────────────
+    # sa.Enum with create_type=True (default) — SQLAlchemy creates the PG enum
+    # type automatically as part of CREATE TABLE. Do NOT also call
+    # op.execute("CREATE TYPE ...") — that causes a duplicate in SQLAlchemy 2.x.
     op.create_table(
         "users",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
@@ -33,13 +31,13 @@ def upgrade() -> None:
         sa.Column("oauth_sub", sa.String(255), nullable=True),
         sa.Column(
             "role",
-            sa.Enum("user", "admin", name="user_role", create_type=False),
+            sa.Enum("user", "admin", name="user_role"),
             nullable=False,
             server_default="user",
         ),
         sa.Column(
             "status",
-            sa.Enum("pending", "active", "suspended", name="user_status", create_type=False),
+            sa.Enum("pending", "active", "suspended", name="user_status"),
             nullable=False,
             server_default="pending",
         ),
@@ -81,9 +79,7 @@ def upgrade() -> None:
         sa.Column("token", sa.String(255), nullable=False),
         sa.Column(
             "type",
-            sa.Enum(
-                "verification", "password_reset", name="email_token_type", create_type=False
-            ),
+            sa.Enum("verification", "password_reset", name="email_token_type"),
             nullable=False,
         ),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
@@ -120,6 +116,6 @@ def downgrade() -> None:
     op.drop_table("refresh_tokens")
     op.drop_table("email_tokens")
     op.drop_table("users")
-    op.execute("DROP TYPE email_token_type")
-    op.execute("DROP TYPE user_status")
-    op.execute("DROP TYPE user_role")
+    op.execute("DROP TYPE IF EXISTS email_token_type")
+    op.execute("DROP TYPE IF EXISTS user_status")
+    op.execute("DROP TYPE IF EXISTS user_role")

@@ -8,7 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 os.environ.setdefault("APP_ENV", "development")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 
+from app.api.deps import get_storage  # noqa: E402
 from app.database import Base, get_db  # noqa: E402
+from app.infrastructure.storage.local import LocalStorageBackend  # noqa: E402
 from app.main import app  # noqa: E402
 
 # In-memory SQLite for tests (no PostgreSQL needed)
@@ -38,11 +40,15 @@ async def db(engine):
 
 
 @pytest.fixture
-async def client(db):
+async def client(db, tmp_path):
     async def override_get_db():
         yield db
 
+    def override_get_storage():
+        return LocalStorageBackend(storage_root=str(tmp_path), base_url="http://test")
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_storage] = override_get_storage
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()

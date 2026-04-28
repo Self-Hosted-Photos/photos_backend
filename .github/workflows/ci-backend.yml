@@ -1,0 +1,92 @@
+name: CI — photos_backend
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    name: Lint & Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+
+    # ── PostgreSQL service ────────────────────────────────────────────────────
+    # Available at localhost:5432 during the job.
+    # Used by `alembic upgrade head` to verify migrations run clean.
+    # pytest itself uses SQLite in-memory (no service dep needed for unit tests).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER:     ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB:       pixelvault_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Used by alembic upgrade head step
+      DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/pixelvault_ci
+      # Minimal vars so Settings() initialises without a .env file
+      SECRET_KEY:    ci-secret-key-not-for-production-use
+      APP_ENV:       development
+      STORAGE_ROOT:  /tmp/storage
+
+    steps:
+      # ── Checkout ────────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Python setup ────────────────────────────────────────────────────────
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # ── pip cache ───────────────────────────────────────────────────────────
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            pip-${{ runner.os }}-${{ matrix.python-version }}-
+
+      # ── Install dependencies ─────────────────────────────────────────────────
+      - name: Install dependencies
+        run: pip install -r requirements.txt aiosqlite
+
+      # ── Lint — ruff ─────────────────────────────────────────────────────────
+      - name: Lint (ruff check)
+        run: ruff check .
+
+      - name: Format check (ruff format)
+        run: ruff format --check .
+
+      # ── Type check — pyright (optional, non-blocking for now) ────────────────
+      # Uncomment when pyright is added to requirements.txt
+      # - name: Type check (pyright)
+      #   run: pyright
+
+      # ── Unit tests — pytest (SQLite in-memory, no postgres dep) ─────────────
+      - name: Test (pytest)
+        run: pytest --tb=short -q
+
+      # ── Migration smoke test — alembic against CI postgres ───────────────────
+      # Verifies 0001_initial_users.py (and future migrations) apply cleanly
+      # and that downgrade -1 rolls back without error.
+      - name: Migration — upgrade head
+        run: alembic upgrade head
+
+      - name: Migration — downgrade (smoke test rollback)
+        run: alembic downgrade -1

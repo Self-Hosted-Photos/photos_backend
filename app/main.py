@@ -1,7 +1,20 @@
+import logging
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+
+# Attach an explicit stdout handler to the app namespace so all app.* loggers
+# are visible in docker logs regardless of uvicorn's logging configuration.
+_app_logger = logging.getLogger("app")
+_app_logger.setLevel(logging.INFO)
+if not _app_logger.handlers:
+    _handler = logging.StreamHandler(sys.stdout)
+    _handler.setLevel(logging.INFO)
+    _handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s - %(message)s"))
+    _app_logger.addHandler(_handler)
+    _app_logger.propagate = False
 
 from app.config import get_settings
 from app.exceptions import (
@@ -96,9 +109,14 @@ def _register_exception_handlers(app: FastAPI) -> None:
 
 
 def _register_routers(app: FastAPI) -> None:
-    from app.api.v1 import auth
+    from app.api.v1 import admin, albums, auth, media, shares
 
     app.include_router(auth.router, prefix="/api/v1")
+    app.include_router(admin.router, prefix="/api/v1")
+    app.include_router(media.router, prefix="/api/v1")
+    app.include_router(albums.router, prefix="/api/v1")
+    app.include_router(shares.router, prefix="/api/v1")
+    app.include_router(shares.public_router, prefix="/api/v1")
 
     @app.get("/health", tags=["health"])
     async def health():

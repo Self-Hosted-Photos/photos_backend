@@ -45,10 +45,14 @@ class User(Base):
     oauth_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
     oauth_sub: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[UserRole] = mapped_column(
-        Enum(UserRole, name="user_role"), nullable=False, default=UserRole.USER
+        Enum(UserRole, name="user_role", values_callable=lambda e: [x.value for x in e]),
+        nullable=False,
+        default=UserRole.USER,
     )
     status: Mapped[UserStatus] = mapped_column(
-        Enum(UserStatus, name="user_status"), nullable=False, default=UserStatus.PENDING
+        Enum(UserStatus, name="user_status", values_callable=lambda e: [x.value for x in e]),
+        nullable=False,
+        default=UserStatus.PENDING,
     )
     storage_used_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     storage_quota_bytes: Mapped[int] = mapped_column(
@@ -103,7 +107,8 @@ class EmailToken(Base):
     )
     token: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     type: Mapped[EmailTokenType] = mapped_column(
-        Enum(EmailTokenType, name="email_token_type"), nullable=False
+        Enum(EmailTokenType, name="email_token_type", values_callable=lambda e: [x.value for x in e]),
+        nullable=False,
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

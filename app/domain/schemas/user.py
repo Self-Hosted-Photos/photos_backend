@@ -41,3 +41,12 @@ class StorageStats(BaseModel):
     storage_used_gb: float
     storage_quota_gb: float
     percent_used: float
+
+
+class AdminStats(BaseModel):
+    total_users: int
+    pending_users: int
+    active_users: int
+    suspended_users: int
+    total_storage_used_bytes: int
+    total_storage_used_gb: float

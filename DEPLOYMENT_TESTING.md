@@ -1,203 +1,178 @@
-# Pixel Vault — Deployment & Testing Guide
+# Pixel Vault — E2E Testing Guide
 
 > **Canonical copy lives in `photos_infra/DEPLOYMENT_TESTING.md`.**
 > This copy is kept here so the guide is accessible when working inside the backend repo.
-> If you update one, update both.
-
-This document covers the full process of bringing up the Pixel Vault stack for the
-first time, whether locally or on a fresh server. Follow it in order.
+> **Last synced:** 2026-04-27
 
 ---
 
-## Prerequisites
+## Current State (as of 2026-04-27)
 
-| Requirement | Version | Notes |
+| Item | Status |
+|---|---|
+| Docker stack (nginx, backend, postgres, redis) | ✅ Running |
+| `photos_infra/.env` | ✅ Configured |
+| `photos_backend/.venv` | ✅ Installed (Python 3.12) |
+| Migration 0001 — users, email_tokens, refresh_tokens | ✅ Applied |
+| Migration 0002 — media, albums, album_media, shares | ❌ Not applied — **do this first** |
+| `/storage/originals`, `/storage/thumbnails` | ❌ Not created — **do this second** |
+
+---
+
+## Postman Environment Setup
+
+Create a Postman environment called **Pixel Vault Local** with these variables before starting:
+
+| Variable | Value | Updated when |
 |---|---|---|
-| Docker Desktop (macOS/Windows) or Docker Engine (Linux) | 24+ | Must be running before Step 3 |
-| Python | 3.12 | For running local tests and alembic |
-| curl | any | For smoke-testing endpoints |
+| `base_url` | `http://localhost` | Never changes |
+| `admin_token` | _(empty)_ | After admin login |
+| `access_token` | _(empty)_ | After user login |
+| `media_id` | _(empty)_ | After photo upload |
+| `album_id` | _(empty)_ | After create album |
+| `share_id` | _(empty)_ | After create share |
+| `share_token` | _(empty)_ | After create public share |
+
+All authenticated requests need this header:
+```
+Authorization: Bearer {{access_token}}
+```
+(swap `access_token` for `admin_token` on admin routes)
 
 ---
 
-## Part 1 — Run the Test Suite (No Docker Required)
+## Part 1 — Pre-flight Checks
 
-These tests run against an in-memory SQLite database. No PostgreSQL needed.
-
-### Step 1 — Create a virtualenv and install dependencies
+### Step 1 — Confirm all containers are running
 
 ```bash
-cd photos_backend
-python3.12 -m venv .venv
-source .venv/bin/activate          # macOS / Linux
-# .venv\Scripts\activate           # Windows
-pip install -r requirements.txt aiosqlite
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 ```
 
-`aiosqlite` is the test-only driver that lets pytest use SQLite instead of PostgreSQL.
+**Expected — all four showing `Up`:**
+```
+photos_infra-nginx-1     Up    0.0.0.0:80->80/tcp
+photos_infra-backend-1   Up    0.0.0.0:8000->8000/tcp
+photos_infra-postgres-1  Up    0.0.0.0:5432->5432/tcp
+photos_infra-redis-1     Up    0.0.0.0:6379->6379/tcp
+```
 
-### Step 2 — Run the test suite
+If any container is not running:
+```bash
+cd /path/to/photos_infra
+docker compose up -d
+```
+
+---
+
+### Step 2 — Run the full test suite
 
 ```bash
+cd /path/to/photos_backend
+source .venv/bin/activate
 pytest --tb=short -q
 ```
 
-**Expected output:**
-```
-.........
-9 passed in Xs
-```
+**Expected:** `89 passed` — if any fail, stop and fix before continuing.
 
-All 9 tests must be green before proceeding. If any fail, do not continue — fix them first.
+---
 
 ### Step 3 — Run the linter
 
 ```bash
+# Still inside photos_backend with venv active
 ruff check .
 ruff format --check .
 ```
 
-**Expected output:** no output (zero issues). Both commands exit with code 0.
+**Expected:** no output, both exit 0.
 
 ---
 
-## Part 2 — Configure the Environment
+## Part 2 — Apply Migration 0002
 
-All commands from here run from `photos_infra/` unless stated otherwise.
+Migration 0001 (users/email_tokens/refresh_tokens) is already applied.
+Migration 0002 (media, albums, album_media, shares) has not been applied yet.
 
-### Step 4 — Copy and edit `.env`
+> Alembic must run inside the backend container — the hostname `postgres` only resolves on the Docker internal network, not from your Mac.
 
-```bash
-cd photos_infra
-cp .env.example .env
-```
-
-Open `.env` and make these changes:
-
-**Generate a SECRET_KEY** (run this, copy the output):
-```bash
-python3 -c "import secrets; print(secrets.token_hex(32))"
-```
-
-Replace the `SECRET_KEY` placeholder in `.env` with the 64-character hex string.
-
-For a local test you can leave all other values at their defaults. For a production
-server, also change `POSTGRES_PASSWORD` to a strong random value and update the
-`DATABASE_URL` to match.
-
-> `.env` is git-ignored and must never be committed.
-
----
-
-## Part 3 — Initialise Storage Directories
-
-The backend container runs as UID 1001 (non-root). The host storage directories must
-be pre-created with the correct ownership before the container tries to write files.
-
-### Step 5 — Run init-storage.sh
+### Step 4 — Apply migration 0002
 
 ```bash
-sudo bash scripts/init-storage.sh
+docker exec photos_infra-backend-1 alembic upgrade head
 ```
 
 **Expected output:**
 ```
-[init-storage] Storage root : /storage
-[init-storage] Creating /storage
-[init-storage] Creating /storage/originals
-[init-storage] Creating /storage/transcoded
-[init-storage] Creating /storage/thumbnails
-[init-storage] Setting ownership to 1001:1001 on /storage
-[init-storage] Setting permissions (750) on /storage
-[init-storage] Write test passed.
-[init-storage] Done. Directory tree:
-...
-[init-storage] Next step: docker compose up -d
+INFO  [alembic.runtime.migration] Running upgrade 0001 -> 0002, media albums shares
 ```
 
-> This step only needs to be run once on first deployment. If you change `STORAGE_ROOT`
-> in `.env`, re-run with: `sudo bash scripts/init-storage.sh /your/custom/path`
-
----
-
-## Part 4 — Build and Start the Stack
-
-### Step 6 — Build images and start all containers
+### Step 5 — Verify all 8 tables exist
 
 ```bash
-docker compose up -d --build
+docker exec photos_infra-postgres-1 psql -U pixelvault -d pixelvault -c "\dt"
 ```
 
-This pulls `postgres:16-alpine` and `redis:7.2-alpine`, builds the backend and nginx
-images, then starts all four containers. The first build takes 2–5 minutes.
-
-### Step 7 — Verify all containers are running
-
-```bash
-docker compose ps
+**Expected:**
 ```
-
-**Expected output (all STATUS = running):**
-```
-NAME                        STATUS
-photos_infra-postgres-1     running
-photos_infra-redis-1        running
-photos_infra-backend-1      running
-photos_infra-nginx-1        running
-```
-
-If `backend` shows `restarting`, check its logs:
-```bash
-docker compose logs backend --tail=40
-```
-
-Common causes: missing `SECRET_KEY` in `.env`, or PostgreSQL not yet ready (wait 5s and retry).
-
----
-
-## Part 5 — Run the Database Migration
-
-> **Important:** always run alembic from **inside** the backend container.
-> Running it from the host fails because the `postgres` hostname only resolves
-> inside the Docker network.
-
-### Step 8 — Apply migrations
-
-```bash
-docker compose exec backend alembic upgrade head
-```
-
-**Expected output:**
-```
-INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
-INFO  [alembic.runtime.migration] Will assume transactional DDL.
-INFO  [alembic.runtime.migration] Running upgrade  -> 0001, initial users, email_tokens, refresh_tokens
-```
-
-No traceback. The migration creates four tables: `alembic_version`, `users`,
-`email_tokens`, `refresh_tokens`.
-
-### Step 9 — Verify the tables exist
-
-```bash
-docker compose exec postgres psql -U pixelvault -d pixelvault -c "\dt"
-```
-
-**Expected output:**
-```
-           List of relations
- Schema |      Name       | Type  |   Owner
---------+-----------------+-------+------------
  public | alembic_version | table | pixelvault
+ public | album_media     | table | pixelvault
+ public | albums          | table | pixelvault
  public | email_tokens    | table | pixelvault
+ public | media           | table | pixelvault
  public | refresh_tokens  | table | pixelvault
+ public | shares          | table | pixelvault
  public | users           | table | pixelvault
 ```
 
 ---
 
-## Part 6 — Smoke Test the Endpoints
+## Part 3 — Initialise Storage Directories
 
-### Step 10 — Health check (nginx → backend chain)
+The `/storage` volume exists but its subdirectories have not been created yet.
+
+> **macOS note:** `storage:` is a Docker **named volume**, not a bind mount to a host path.
+> On macOS, named volumes live inside Docker Desktop's Linux VM — the macOS filesystem
+> cannot reach them. Running `sudo bash scripts/init-storage.sh` will fail with
+> `mkdir: /storage: Read-only file system`.
+>
+> `init-storage.sh` is only for Linux servers where `/storage` is a real host directory.
+> On macOS, create the subdirectories from inside the running container instead (Step 6 below).
+
+### Step 6 — Create storage subdirectories (macOS)
+
+```bash
+docker exec -u root photos_infra-backend-1 mkdir -p /storage/originals /storage/transcoded /storage/thumbnails
+docker exec -u root photos_infra-backend-1 chown -R 1001:1001 /storage
+docker exec -u root photos_infra-backend-1 chmod 750 /storage
+```
+
+### Step 6 (Linux server alternative) — Run init-storage.sh
+
+```bash
+cd /path/to/photos_infra
+sudo bash scripts/init-storage.sh
+```
+
+### Step 7 — Verify inside the container
+
+```bash
+docker exec photos_infra-backend-1 find /storage -type d
+```
+
+**Expected:**
+```
+/storage
+/storage/originals
+/storage/transcoded
+/storage/thumbnails
+```
+
+---
+
+## Part 4 — Health Check
+
+### Step 8 — Hit the health endpoint through nginx
 
 ```bash
 curl -i http://localhost/health
@@ -209,214 +184,563 @@ HTTP/1.1 200 OK
 {"status":"ok"}
 ```
 
-This confirms: nginx is up, the proxy to backend:8000 works, and the backend
-connected to PostgreSQL successfully.
+You can also open `http://localhost/docs` in your browser to see the full Swagger UI.
 
 ---
 
-### Step 11 — Register a new user
+## Part 5 — Create the Admin Account
+
+Admin accounts are provisioned manually (no public register endpoint for admins).
+
+### Step 9 — Generate a bcrypt hash for the admin password
 
 ```bash
-curl -i -X POST http://localhost/api/v1/auth/register \
+cd /path/to/photos_backend
+source .venv/bin/activate
+python3 -c "import bcrypt; print(bcrypt.hashpw(b'AdminPass123!', bcrypt.gensalt()).decode())"
+```
+
+Copy the full output (starts with `$2b$12$...`).
+
+### Step 10 — Insert the admin user
+
+Replace `<HASH>` with the output from Step 9:
+
+```bash
+docker exec photos_infra-postgres-1 psql -U pixelvault -d pixelvault -c "
+INSERT INTO users (
+  id, email, password_hash, full_name, role, status, email_verified,
+  storage_used_bytes, storage_quota_bytes, created_at, updated_at
+) VALUES (
+  gen_random_uuid(),
+  'admin@pixelvault.dev',
+  '<HASH>',
+  'Admin User',
+  'admin',
+  'active',
+  true,
+  0,
+  107374182400,
+  now(),
+  now()
+);"
+```
+
+**Expected:** `INSERT 0 1`
+
+---
+
+## Part 6 — Auth Flow
+
+### Step 11 — Log in as admin
+
+**Postman:**
+- POST `{{base_url}}/api/v1/auth/login`
+- Body (JSON): `{"email":"admin@pixelvault.dev","password":"AdminPass123!"}`
+
+```bash
+curl -s -X POST http://localhost/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"TestPass123!","full_name":"Test User"}'
+  -d '{"email":"admin@pixelvault.dev","password":"AdminPass123!"}' | jq .
+```
+
+→ Copy `access_token` → paste into Postman `admin_token` variable.
+
+---
+
+### Step 12 — Register a regular test user
+
+**Postman:**
+- POST `{{base_url}}/api/v1/auth/register`
+- Body (JSON): `{"email":"user@test.com","password":"UserPass123!","full_name":"Test User"}`
+
+```bash
+curl -s -X POST http://localhost/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@test.com","password":"UserPass123!","full_name":"Test User"}' | jq .
+```
+
+**Expected:** 201 Created, `status: "pending"`.
+
+---
+
+### Step 13 — Get the email verification token from backend logs
+
+```bash
+docker logs photos_infra-backend-1 2>&1 | grep "EMAIL STUB" | tail -3
+```
+
+Copy the `token=` value from the link in the log output.
+
+---
+
+### Step 14 — Verify the user's email
+
+**Postman:** GET `{{base_url}}/api/v1/auth/verify-email?token=<TOKEN>`
+
+```bash
+curl -s "http://localhost/api/v1/auth/verify-email?token=<TOKEN>" | jq .
+```
+
+**Expected:** `email_verified: true`, `status` still `"pending"`.
+
+---
+
+### Step 15 — Confirm pending user cannot log in yet
+
+```bash
+curl -s -X POST http://localhost/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@test.com","password":"UserPass123!"}' | jq .
+```
+
+**Expected:** `403 Forbidden`, `"code":"account_not_active"`.
+
+---
+
+## Part 7 — Admin Routes
+
+### Step 16 — List pending users
+
+**Postman:** GET `{{base_url}}/api/v1/admin/users/pending` + `Authorization: Bearer {{admin_token}}`
+
+```bash
+curl -s http://localhost/api/v1/admin/users/pending \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" | jq .
+```
+
+**Expected:** array with one user, `status: "pending"`. Copy the user's `id`.
+
+---
+
+### Step 17 — Approve the user via admin API
+
+**Postman:** POST `{{base_url}}/api/v1/admin/users/{{user_id}}/approve` + admin token
+
+```bash
+curl -s -X POST http://localhost/api/v1/admin/users/<USER_ID>/approve \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" | jq .
+```
+
+**Expected:** `status: "active"`.
+
+---
+
+### Step 18 — Check admin stats
+
+**Postman:** GET `{{base_url}}/api/v1/admin/stats` + admin token
+
+```bash
+curl -s http://localhost/api/v1/admin/stats \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" | jq .
 ```
 
 **Expected:**
-```
-HTTP/1.1 201 Created
-
+```json
 {
-  "id": "...",
-  "email": "test@example.com",
-  "full_name": "Test User",
-  "role": "user",
-  "status": "pending",
-  ...
+  "total_users": 2,
+  "active_users": 2,
+  "pending_users": 0,
+  "total_media_items": 0,
+  "total_storage_used_bytes": 0
 }
 ```
 
-> `status: "pending"` is correct — every new user must be approved by an admin
-> before they can log in. This is the admin-gating feature (ADR-001).
-
-Check the backend logs to see the email verification stub:
-```bash
-docker compose logs backend 2>&1 | grep "EMAIL STUB"
-```
-
-You will see a line like:
-```
-[EMAIL STUB] Verification email → test@example.com | link: http://localhost:8000/verify-email?token=<token>
-```
-
 ---
 
-### Step 12 — Confirm pending users cannot log in
+## Part 8 — User Login + Token Lifecycle
+
+### Step 19 — Log in as the approved user
+
+**Postman:** POST `{{base_url}}/api/v1/auth/login`
+Body: `{"email":"user@test.com","password":"UserPass123!"}`
 
 ```bash
-curl -i -X POST http://localhost/api/v1/auth/login \
+curl -s -X POST http://localhost/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"TestPass123!"}'
+  -d '{"email":"user@test.com","password":"UserPass123!"}' \
+  -c /tmp/pv_cookies.txt | jq .
 ```
 
-**Expected:**
-```
-HTTP/1.1 403 Forbidden
-{"detail":"Account is not active","code":"account_not_active"}
-```
-
-The admin gate is working correctly.
+→ Copy `access_token` → paste into Postman `access_token` variable.
 
 ---
 
-### Step 13 — Manually approve the user (admin routes not built yet)
-
-Until Sprint 2 admin routes are complete, approve users directly in the database:
+### Step 20 — Test the refresh token
 
 ```bash
-docker compose exec postgres psql -U pixelvault -d pixelvault \
-  -c "UPDATE users SET status='active' WHERE email='test@example.com';"
+curl -s -X POST http://localhost/api/v1/auth/refresh \
+  -b /tmp/pv_cookies.txt | jq .
 ```
 
-**Expected:** `UPDATE 1`
+**Expected:** new `access_token` issued from the httpOnly cookie alone.
 
 ---
 
-### Step 14 — Log in as the active user
+### Step 21 — Test logout + token invalidation
 
 ```bash
-curl -i -X POST http://localhost/api/v1/auth/login \
+curl -s -X POST http://localhost/api/v1/auth/logout \
+  -b /tmp/pv_cookies.txt | jq .
+```
+
+**Expected:** `{"message":"Logged out"}`
+
+Try refresh again — should fail:
+```bash
+curl -s -X POST http://localhost/api/v1/auth/refresh \
+  -b /tmp/pv_cookies.txt | jq .
+```
+
+**Expected:** `401 Unauthorized`.
+
+Log back in before continuing, update `access_token` in Postman.
+
+---
+
+## Part 9 — Photo Upload + Storage Verification
+
+### Step 22 — Upload a JPEG photo
+
+**Postman:**
+- POST `{{base_url}}/api/v1/media/upload`
+- Header: `Authorization: Bearer {{access_token}}`
+- Body: `form-data` → key `file`, type **File** → select a JPEG from your Mac
+
+```bash
+curl -s -X POST http://localhost/api/v1/media/upload \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -F "file=@/path/to/photo.jpg" | jq .
+```
+
+**Expected — 202 Accepted:**
+```json
+{
+  "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "media_type": "photo",
+  "mime_type": "image/jpeg",
+  "original_path": "originals/<user_id>/<uuid>.jpg",
+  "thumbnail_path": "thumbnails/<user_id>/<uuid>_thumb.jpg",
+  "file_size_bytes": 123456,
+  "captured_at": "2024-06-15",
+  "status": "ready"
+}
+```
+
+→ Copy `id` → paste into Postman `media_id` variable.
+
+> `captured_at` is `null` if the photo has no EXIF data. Use a real phone photo for best results.
+
+---
+
+### Step 23 — Verify files are on disk
+
+```bash
+docker exec photos_infra-backend-1 find /storage -type f
+```
+
+**Expected — two files:**
+```
+/storage/originals/<user_id>/<uuid>.jpg
+/storage/thumbnails/<user_id>/<uuid>_thumb.jpg
+```
+
+Verify the DB row:
+```bash
+docker exec photos_infra-postgres-1 psql -U pixelvault -d pixelvault \
+  -c "SELECT id, original_path, thumbnail_path, file_size_bytes, status FROM media;"
+```
+
+**Expected:** one row, `status = ready`.
+
+---
+
+## Part 10 — Media Listing + Timeline + Streaming
+
+### Step 24 — List media (paginated)
+
+**Postman:** GET `{{base_url}}/api/v1/media`
+
+```bash
+curl -s http://localhost/api/v1/media \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" | jq .
+```
+
+**Expected:** `data[]` with one item, `meta.total: 1`.
+
+---
+
+### Step 25 — Timeline view
+
+**Postman:** GET `{{base_url}}/api/v1/media/timeline`
+
+```bash
+curl -s http://localhost/api/v1/media/timeline \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" | jq .
+```
+
+**Expected:** array of groups with `year`, `month`, `count`, `items[]`.
+
+---
+
+### Step 26 — Stream thumbnail
+
+**Postman:** GET `{{base_url}}/api/v1/media/{{media_id}}/thumbnail`
+
+```bash
+curl -s "http://localhost/api/v1/media/<MEDIA_ID>/thumbnail" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  --output /tmp/thumb_check.jpg && open /tmp/thumb_check.jpg
+```
+
+**Expected:** `200 OK`, `Content-Type: image/jpeg`, viewable 320×320 image.
+
+---
+
+### Step 27 — Stream original + HTTP Range
+
+Full file:
+```bash
+curl -s "http://localhost/api/v1/media/<MEDIA_ID>/stream" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  --output /tmp/original_check.jpg && open /tmp/original_check.jpg
+```
+
+Ranged request:
+```bash
+curl -si "http://localhost/api/v1/media/<MEDIA_ID>/stream" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Range: bytes=0-1023" | head -6
+```
+
+**Expected:** `HTTP/1.1 206 Partial Content`, `Content-Range: bytes 0-1023/<total>`.
+
+---
+
+## Part 11 — Album CRUD
+
+### Step 28 — Create an album
+
+**Postman:** POST `{{base_url}}/api/v1/albums`
+Body: `{"title":"Summer 2024","description":"Holiday photos"}`
+
+```bash
+curl -s -X POST http://localhost/api/v1/albums \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
   -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"TestPass123!"}' \
-  -c /tmp/pv_cookies.txt
+  -d '{"title":"Summer 2024","description":"Holiday photos"}' | jq .
 ```
 
-**Expected:**
-```
-HTTP/1.1 200 OK
-Set-Cookie: refresh_token=...; Path=/api/v1/auth; HttpOnly; SameSite=Lax
-
-{"access_token":"eyJ...","token_type":"bearer","user":{...}}
-```
-
-Two things returned:
-- `access_token` in the body — a 15-minute JWT, used in `Authorization: Bearer` headers
-- `refresh_token` httpOnly cookie — a 7-day token stored only in the browser, saved to `/tmp/pv_cookies.txt`
+**Expected:** 201 Created, `media_count: 0`. → Copy `id` → `album_id`.
 
 ---
 
-### Step 15 — Use the refresh token to get a new access token
+### Step 29 — Add photo to album
+
+**Postman:** POST `{{base_url}}/api/v1/albums/{{album_id}}/media`
+Body: `{"media_ids":["{{media_id}}"]}`
 
 ```bash
-curl -i -X POST http://localhost/api/v1/auth/refresh \
-  -b /tmp/pv_cookies.txt
+curl -s -X POST "http://localhost/api/v1/albums/<ALBUM_ID>/media" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"media_ids":["<MEDIA_ID>"]}' | jq .
 ```
 
-**Expected:**
-```
-HTTP/1.1 200 OK
-{"access_token":"eyJ...","token_type":"bearer"}
-```
-
-New access token issued from the cookie alone — no password needed.
+**Expected:** `media_count: 1`, photo in `items[]`.
 
 ---
 
-### Step 16 — Log out
+### Step 30 — Get album detail
+
+**Postman:** GET `{{base_url}}/api/v1/albums/{{album_id}}`
 
 ```bash
-curl -i -X POST http://localhost/api/v1/auth/logout \
-  -b /tmp/pv_cookies.txt
+curl -s "http://localhost/api/v1/albums/<ALBUM_ID>" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" | jq .
 ```
-
-**Expected:**
-```
-HTTP/1.1 200 OK
-{"message":"Logged out"}
-```
-
-The refresh token is deleted from the database and the cookie is cleared.
 
 ---
 
-### Step 17 — Confirm refresh no longer works after logout
+### Step 31 — List all albums
+
+**Postman:** GET `{{base_url}}/api/v1/albums`
 
 ```bash
-curl -i -X POST http://localhost/api/v1/auth/refresh \
-  -b /tmp/pv_cookies.txt
+curl -s http://localhost/api/v1/albums \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" | jq .
 ```
-
-**Expected:**
-```
-HTTP/1.1 401 Unauthorized
-```
-
-Token invalidation confirmed.
 
 ---
 
-## Part 7 — Inspect the Database (Optional)
+### Step 32 — Remove photo from album
 
 ```bash
-docker compose exec postgres psql -U pixelvault -d pixelvault
+curl -si -X DELETE "http://localhost/api/v1/albums/<ALBUM_ID>/media/<MEDIA_ID>" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" | head -1
 ```
 
-Inside psql:
+**Expected:** `HTTP/1.1 204 No Content`
+
+---
+
+### Step 33 — Delete the album
+
+```bash
+curl -si -X DELETE "http://localhost/api/v1/albums/<ALBUM_ID>" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" | head -1
+```
+
+**Expected:** `HTTP/1.1 204 No Content`
+
+---
+
+## Part 12 — Sharing
+
+### Step 34 — Create a public link share
+
+**Postman:** POST `{{base_url}}/api/v1/shares`
+Body: `{"share_type":"public_link","target_media_id":"{{media_id}}"}`
+
+```bash
+curl -s -X POST http://localhost/api/v1/shares \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"share_type":"public_link","target_media_id":"<MEDIA_ID>"}' | jq .
+```
+
+**Expected:** 201 Created with `public_token` UUID4.
+→ Copy `id` → `share_id`. Copy `public_token` → `share_token`.
+
+---
+
+### Step 35 — Resolve the public link with no auth
+
+**Postman:** GET `{{base_url}}/api/v1/public/{{share_token}}` — **no Authorization header**
+
+```bash
+curl -s "http://localhost/api/v1/public/<SHARE_TOKEN>" | jq .
+```
+
+**Expected — 200 OK, no credentials needed:**
+```json
+{
+  "share_type": "media",
+  "media": { "id": "...", "media_type": "photo", ... },
+  "album": null
+}
+```
+
+---
+
+### Step 36 — User-to-user share (requires a second user)
+
+Register + verify + approve `user2@test.com` (repeat Steps 12–17), then:
+
+```bash
+curl -s -X POST http://localhost/api/v1/shares \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "share_type": "user",
+    "target_media_id": "<MEDIA_ID>",
+    "shared_with_user_id": "<USER2_ID>"
+  }' | jq .
+```
+
+Log in as user 2 and check their inbox:
+```bash
+curl -s http://localhost/api/v1/shares/with-me \
+  -H "Authorization: Bearer <USER2_TOKEN>" | jq .
+```
+
+**Expected:** share appears in user 2's list.
+
+---
+
+### Step 37 — Revoke + confirm dead
+
+```bash
+curl -si -X DELETE "http://localhost/api/v1/shares/<SHARE_ID>" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" | head -1
+```
+
+**Expected:** `HTTP/1.1 204 No Content`
+
+```bash
+curl -s "http://localhost/api/v1/public/<SHARE_TOKEN>" | jq .
+```
+
+**Expected:** `404 NOT_FOUND`.
+
+---
+
+## Part 13 — Full Database Audit
+
+```bash
+docker exec photos_infra-postgres-1 psql -U pixelvault -d pixelvault
+```
 
 ```sql
--- See all registered users
-SELECT id, email, status, role, created_at FROM users;
+\dt
 
--- See refresh tokens (empty after logout)
-SELECT id, user_id, revoked, created_at FROM refresh_tokens;
+SELECT id, email, role, status, storage_used_bytes FROM users;
+SELECT id, original_path, thumbnail_path, status, file_size_bytes FROM media;
+SELECT id, title, owner_id FROM albums;
+SELECT * FROM album_media;
+SELECT id, share_type, public_token, target_media_id FROM shares;
+SELECT id, user_id, revoked FROM refresh_tokens;
 
--- See email verification tokens
-SELECT id, user_id, type, used, expires_at FROM email_tokens;
-
--- Exit
 \q
 ```
 
 ---
 
+## Quick Reference — All 24 Endpoints
+
+| # | Method | Path | Auth |
+|---|---|---|---|
+| 1 | GET | `/health` | None |
+| 2 | POST | `/api/v1/auth/register` | None |
+| 3 | GET | `/api/v1/auth/verify-email?token=` | None |
+| 4 | POST | `/api/v1/auth/login` | None |
+| 5 | POST | `/api/v1/auth/refresh` | Cookie |
+| 6 | POST | `/api/v1/auth/logout` | Cookie |
+| 7 | GET | `/api/v1/admin/users/pending` | Admin JWT |
+| 8 | POST | `/api/v1/admin/users/{id}/approve` | Admin JWT |
+| 9 | GET | `/api/v1/admin/stats` | Admin JWT |
+| 10 | POST | `/api/v1/media/upload` | User JWT |
+| 11 | GET | `/api/v1/media` | User JWT |
+| 12 | GET | `/api/v1/media/timeline` | User JWT |
+| 13 | GET | `/api/v1/media/{id}/thumbnail` | User JWT |
+| 14 | GET | `/api/v1/media/{id}/stream` | User JWT |
+| 15 | POST | `/api/v1/albums` | User JWT |
+| 16 | GET | `/api/v1/albums` | User JWT |
+| 17 | GET | `/api/v1/albums/{id}` | User JWT |
+| 18 | POST | `/api/v1/albums/{id}/media` | User JWT |
+| 19 | DELETE | `/api/v1/albums/{id}/media/{media_id}` | User JWT |
+| 20 | DELETE | `/api/v1/albums/{id}` | User JWT |
+| 21 | POST | `/api/v1/shares` | User JWT |
+| 22 | GET | `/api/v1/shares/with-me` | User JWT |
+| 23 | DELETE | `/api/v1/shares/{id}` | User JWT |
+| 24 | GET | `/api/v1/public/{token}` | None |
+
+---
+
 ## Resetting the Database (Dev Only)
 
-If the database gets into a bad state during development (e.g. a partial migration),
-wipe and re-run:
-
 ```bash
-docker compose exec postgres psql -U pixelvault -d pixelvault \
+docker exec photos_infra-postgres-1 psql -U pixelvault -d pixelvault \
   -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO pixelvault;"
 
-docker compose exec backend alembic upgrade head
+docker exec photos_infra-backend-1 alembic upgrade head
 ```
 
-> Never run this on a production database. It destroys all data.
-
----
-
-## Stopping the Stack
+## Stopping / Restarting the Stack
 
 ```bash
-docker compose down          # stops containers, keeps volumes (data preserved)
-docker compose down -v       # stops containers AND deletes volumes (data destroyed)
+cd /path/to/photos_infra
+docker compose down       # stop, data preserved
+docker compose up -d      # start again
+docker compose down -v    # stop + delete all data
 ```
-
----
-
-## What Each Step Validates
-
-| Step | What it proves |
-|---|---|
-| 1–3 | Auth service logic, bcrypt hashing, SQLite compat, all 9 tests |
-| 4 | Environment is correctly configured |
-| 5 | Storage directory tree exists with correct UID ownership |
-| 6–7 | All 4 Docker images build and all containers start |
-| 8–9 | Alembic connects to PostgreSQL and all 3 tables + indexes are created |
-| 10 | nginx → backend proxy chain is alive |
-| 11 | Registration, bcrypt hash stored, email verification token created |
-| 12 | Admin-gating works — pending users cannot log in |
-| 13 | Direct DB access works (useful for admin tasks pre-Sprint 2) |
-| 14 | Login, JWT access token issued, refresh cookie set |
-| 15 | Refresh token rotation |
-| 16–17 | Logout + server-side token invalidation |

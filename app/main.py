@@ -1,7 +1,20 @@
+import logging
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+
+# Attach an explicit stdout handler to the app namespace so all app.* loggers
+# are visible in docker logs regardless of uvicorn's logging configuration.
+_app_logger = logging.getLogger("app")
+_app_logger.setLevel(logging.INFO)
+if not _app_logger.handlers:
+    _handler = logging.StreamHandler(sys.stdout)
+    _handler.setLevel(logging.INFO)
+    _handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s - %(message)s"))
+    _app_logger.addHandler(_handler)
+    _app_logger.propagate = False
 
 from app.config import get_settings
 from app.exceptions import (

@@ -9,7 +9,6 @@ from app.domain.models.user import UserStatus
 from app.infrastructure.repositories.media_repo import SQLMediaRepository
 from app.infrastructure.repositories.user_repo import SQLUserRepository
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _make_jpeg() -> bytes:

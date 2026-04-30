@@ -5,7 +5,6 @@ import pytest
 from app.domain.models.user import UserRole, UserStatus
 from app.infrastructure.repositories.user_repo import SQLUserRepository
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def _create_admin(client, db, email: str = "admin@test.com", password: str = "adminpass123") -> str:

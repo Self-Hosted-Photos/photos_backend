@@ -3,11 +3,10 @@ import os
 import sys
 from logging.config import fileConfig
 
+from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
-
-from alembic import context
 
 # Allow importing app modules from the project root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -22,11 +21,11 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Import all models so Alembic autogenerate can detect them
+# Override sqlalchemy.url from environment if DATABASE_URL is set
+from app.config import get_settings  # noqa: E402
 from app.database import Base  # noqa: E402
 from app.domain.models.user import EmailToken, RefreshToken, User  # noqa: E402, F401
 
-# Override sqlalchemy.url from environment if DATABASE_URL is set
-from app.config import get_settings  # noqa: E402
 _settings = get_settings()
 config.set_main_option("sqlalchemy.url", _settings.database_url)
 

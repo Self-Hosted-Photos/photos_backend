@@ -1,13 +1,12 @@
 import io
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from PIL import Image
 
 from app.domain.models.user import UserStatus
 from app.infrastructure.repositories.user_repo import SQLUserRepository
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -91,7 +90,7 @@ async def test_create_public_link_for_media_returns_201_with_token(client, db):
 @pytest.mark.asyncio
 async def test_create_user_share_for_media_returns_201(client, db):
     token_a = await _create_active_user(client, db, "shr_usr_a@test.com")
-    token_b = await _create_active_user(client, db, "shr_usr_b@test.com")
+    await _create_active_user(client, db, "shr_usr_b@test.com")
     media_id = await _upload_photo(client, token_a)
     user_b_id = await _get_user_id(db, "shr_usr_b@test.com")
 
@@ -396,7 +395,7 @@ async def test_resolve_expired_share_returns_404(client, db):
     media_id = await _upload_photo(client, token)
 
     # Create share with an expiry in the past
-    past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    past = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     create_r = await client.post(
         "/api/v1/shares",
         headers={"Authorization": f"Bearer {token}"},

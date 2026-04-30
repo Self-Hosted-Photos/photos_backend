@@ -4,9 +4,8 @@ import piexif
 import pytest
 from PIL import Image
 
-from app.domain.models.user import UserRole, UserStatus
+from app.domain.models.user import UserStatus
 from app.infrastructure.repositories.user_repo import SQLUserRepository
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

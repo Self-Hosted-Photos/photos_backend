@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response, StreamingResponse
 
-from app.api.deps import CurrentUser, DB, Storage
+from app.api.deps import DB, CurrentUser, Storage
 from app.config import Settings, get_settings
 from app.domain.schemas.media import (
     MediaResponse,

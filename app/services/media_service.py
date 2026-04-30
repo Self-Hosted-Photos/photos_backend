@@ -1,6 +1,6 @@
+import contextlib
 import io
 import uuid
-from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
@@ -87,12 +87,10 @@ def _parse_exif(file_bytes: bytes) -> tuple[date | None, GpsCoordinates | None]:
     exif_ifd = exif_dict.get("Exif", {})
     dt_raw = exif_ifd.get(piexif.ExifIFD.DateTimeOriginal)
     if dt_raw:
-        try:
+        with contextlib.suppress(ValueError, UnicodeDecodeError):
             captured_at = datetime.strptime(
                 dt_raw.decode("ascii"), "%Y:%m:%d %H:%M:%S"
             ).date()
-        except (ValueError, UnicodeDecodeError):
-            pass
 
     # GPS IFD — piexif uses integer keys
     gps_ifd = exif_dict.get("GPS", {})
@@ -289,7 +287,6 @@ class MediaService:
         return media
 
     async def read_file_bytes(self, path: str) -> bytes:
-        from app.exceptions import StorageError
         try:
             chunks = []
             async for chunk in self._storage.read(path):

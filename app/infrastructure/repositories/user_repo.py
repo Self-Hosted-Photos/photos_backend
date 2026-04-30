@@ -18,6 +18,9 @@ class UserRepository(ABC):
     async def get_pending_users(self, limit: int, offset: int) -> list[User]: ...
 
     @abstractmethod
+    async def get_all_users(self, status: UserStatus | None, limit: int, offset: int) -> list[User]: ...
+
+    @abstractmethod
     async def count_by_status(self, status: UserStatus) -> int: ...
 
     @abstractmethod
@@ -52,6 +55,15 @@ class SQLUserRepository(UserRepository):
             .limit(limit)
             .offset(offset)
         )
+        return list(result.scalars().all())
+
+    async def get_all_users(
+        self, status: UserStatus | None = None, limit: int = 100, offset: int = 0
+    ) -> list[User]:
+        q = select(User).order_by(User.created_at.desc()).limit(limit).offset(offset)
+        if status is not None:
+            q = q.where(User.status == status)
+        result = await self._db.execute(q)
         return list(result.scalars().all())
 
     async def save(self, user: User) -> User:

@@ -3,6 +3,7 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Date,
     DateTime,
@@ -10,7 +11,6 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Index,
-    JSON,
     String,
     func,
 )

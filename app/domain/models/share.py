@@ -1,6 +1,6 @@
 import enum
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, func
 from sqlalchemy.dialects.postgresql import UUID
@@ -54,11 +54,11 @@ class Share(Base):
 
     def is_valid(self) -> bool:
         if self.expires_at:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             exp = self.expires_at
             # SQLite stores datetimes without timezone; assume UTC if naive
             if exp.tzinfo is None:
-                exp = exp.replace(tzinfo=timezone.utc)
+                exp = exp.replace(tzinfo=UTC)
             if now > exp:
                 return False
         return True

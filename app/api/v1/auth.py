@@ -74,7 +74,7 @@ async def register(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "EMAIL_ALREADY_EXISTS", "message": str(exc)},
-        )
+        ) from exc
     return user
 
 
@@ -98,13 +98,13 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "UNAUTHORIZED", "message": str(exc)},
-        )
+        ) from exc
     except AccountNotActiveError as exc:
         code = "ACCOUNT_PENDING" if "approval" in str(exc) else "ACCOUNT_SUSPENDED"
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": code, "message": str(exc)},
-        )
+        ) from exc
 
     _set_refresh_cookie(
         response,
@@ -128,7 +128,7 @@ async def verify_email(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "VALIDATION_ERROR", "message": str(exc)},
-        )
+        ) from exc
     return MessageResponse(message="Email verified successfully. Awaiting admin approval.")
 
 
@@ -162,7 +162,7 @@ async def refresh(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "UNAUTHORIZED", "message": str(exc)},
-        )
+        ) from exc
     return RefreshResponse(access_token=access_token)
 
 
@@ -205,5 +205,5 @@ async def reset_password(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "VALIDATION_ERROR", "message": str(exc)},
-        )
+        ) from exc
     return MessageResponse(message="Password reset successfully. You can now log in.")

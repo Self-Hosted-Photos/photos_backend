@@ -3,13 +3,6 @@ import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 
-
-def _as_utc(dt: datetime) -> datetime:
-    """Ensure a datetime is UTC-aware (handles naive datetimes from SQLite)."""
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=UTC)
-    return dt
-
 import bcrypt as _bcrypt
 from jose import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +12,6 @@ from app.domain.models.user import EmailToken, EmailTokenType, RefreshToken, Use
 from app.domain.schemas.auth import (
     LoginRequest,
     RegisterRequest,
-    TokenResponse,
 )
 from app.exceptions import (
     AccountNotActiveError,
@@ -34,6 +26,13 @@ from app.infrastructure.repositories.user_repo import (
     RefreshTokenRepository,
     SQLUserRepository,
 )
+
+
+def _as_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt
+
 
 def _hash_password(plain: str) -> str:
     return _bcrypt.hashpw(plain.encode(), _bcrypt.gensalt()).decode()

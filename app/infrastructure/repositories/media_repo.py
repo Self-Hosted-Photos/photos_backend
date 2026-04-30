@@ -42,6 +42,12 @@ class MediaRepository(ABC):
     async def get_all_for_timeline(self, owner_id: uuid.UUID) -> list[Media]: ...
 
     @abstractmethod
+    async def get_all(self, limit: int, offset: int) -> list[Media]: ...
+
+    @abstractmethod
+    async def count_all(self) -> int: ...
+
+    @abstractmethod
     async def save(self, media: Media) -> Media: ...
 
     @abstractmethod
@@ -105,6 +111,19 @@ class SQLMediaRepository(MediaRepository):
             .order_by(Media.uploaded_at.desc())
         )
         return list(result.scalars().all())
+
+    async def get_all(self, limit: int = 50, offset: int = 0) -> list[Media]:
+        result = await self._db.execute(
+            select(Media)
+            .order_by(Media.uploaded_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(result.scalars().all())
+
+    async def count_all(self) -> int:
+        result = await self._db.execute(select(func.count()).select_from(Media))
+        return result.scalar_one()
 
     async def save(self, media: Media) -> Media:
         self._db.add(media)

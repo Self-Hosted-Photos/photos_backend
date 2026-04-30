@@ -48,6 +48,13 @@ class AdminService:
 
         return user
 
+    async def activate_user(self, user_id: uuid.UUID) -> User:
+        user = await self._users.get_by_id(user_id)
+        if not user:
+            raise ResourceNotFoundError(f"User {user_id} not found")
+        user.activate()
+        return await self._users.save(user)
+
     async def suspend_user(self, user_id: uuid.UUID) -> User:
         user = await self._users.get_by_id(user_id)
         if not user:
@@ -56,6 +63,13 @@ class AdminService:
         user.suspend()  # raises InvalidStateError if role is admin
         user = await self._users.save(user)
         return user
+
+    async def delete_user(self, user_id: uuid.UUID) -> None:
+        user = await self._users.get_by_id(user_id)
+        if not user:
+            raise ResourceNotFoundError(f"User {user_id} not found")
+        user.soft_delete()
+        await self._users.save(user)
 
     async def get_all_users(
         self, status: UserStatus | None = None, limit: int = 100, offset: int = 0

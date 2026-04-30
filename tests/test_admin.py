@@ -199,3 +199,113 @@ async def test_get_stats_returns_correct_shape(client, db):
     )
     assert "total_storage_used_bytes" in body
     assert "total_storage_used_gb" in body
+
+
+# ── POST /admin/users/{id}/activate ──────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_activate_pending_user_returns_active(client, db):
+    token = await _create_admin(client, db, "admin_act1@test.com")
+    await _create_pending_user(client, "activate_pending@test.com")
+
+    repo = SQLUserRepository(db)
+    user = await repo.get_by_email("activate_pending@test.com")
+
+    r = await client.post(
+        f"/api/v1/admin/users/{user.id}/activate",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_activate_suspended_user_returns_active(client, db):
+    token = await _create_admin(client, db, "admin_act2@test.com")
+    await _create_pending_user(client, "activate_suspended@test.com")
+
+    repo = SQLUserRepository(db)
+    user = await repo.get_by_email("activate_suspended@test.com")
+    user.status = UserStatus.SUSPENDED
+    await db.flush()
+
+    r = await client.post(
+        f"/api/v1/admin/users/{user.id}/activate",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_activate_already_active_user_returns_422(client, db):
+    token = await _create_admin(client, db, "admin_act3@test.com")
+    await _create_pending_user(client, "activate_active@test.com")
+
+    repo = SQLUserRepository(db)
+    user = await repo.get_by_email("activate_active@test.com")
+    user.status = UserStatus.ACTIVE
+    await db.flush()
+
+    r = await client.post(
+        f"/api/v1/admin/users/{user.id}/activate",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_activate_nonexistent_user_returns_404(client, db):
+    token = await _create_admin(client, db, "admin_act4@test.com")
+
+    r = await client.post(
+        f"/api/v1/admin/users/{uuid.uuid4()}/activate",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 404
+
+
+# ── DELETE /admin/users/{id} ──────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_delete_suspended_user_returns_204_and_excluded_from_list(client, db):
+    token = await _create_admin(client, db, "admin_del1@test.com")
+    await _create_pending_user(client, "delete_me@test.com")
+
+    repo = SQLUserRepository(db)
+    user = await repo.get_by_email("delete_me@test.com")
+    user.status = UserStatus.SUSPENDED
+    await db.flush()
+
+    r = await client.delete(
+        f"/api/v1/admin/users/{user.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 204
+
+    # Confirm excluded from GET /admin/users
+    r = await client.get(
+        "/api/v1/admin/users",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    ids = [u["id"] for u in r.json()]
+    assert str(user.id) not in ids
+
+
+@pytest.mark.asyncio
+async def test_delete_non_suspended_user_returns_422(client, db):
+    token = await _create_admin(client, db, "admin_del2@test.com")
+    await _create_pending_user(client, "delete_active@test.com")
+
+    repo = SQLUserRepository(db)
+    user = await repo.get_by_email("delete_active@test.com")
+    user.status = UserStatus.ACTIVE
+    await db.flush()
+
+    r = await client.delete(
+        f"/api/v1/admin/users/{user.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 422

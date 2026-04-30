@@ -60,7 +60,13 @@ class SQLUserRepository(UserRepository):
     async def get_all_users(
         self, status: UserStatus | None = None, limit: int = 100, offset: int = 0
     ) -> list[User]:
-        q = select(User).order_by(User.created_at.desc()).limit(limit).offset(offset)
+        q = (
+            select(User)
+            .where(User.status != UserStatus.DELETED)
+            .order_by(User.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         if status is not None:
             q = q.where(User.status == status)
         result = await self._db.execute(q)

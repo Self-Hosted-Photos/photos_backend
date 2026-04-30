@@ -18,6 +18,7 @@ class UserStatus(str, enum.Enum):
     PENDING = "pending"
     ACTIVE = "active"
     SUSPENDED = "suspended"
+    DELETED = "deleted"
 
 
 class EmailTokenType(str, enum.Enum):
@@ -79,12 +80,28 @@ class User(Base):
             raise InvalidStateError("Only pending users can be approved")
         self.status = UserStatus.ACTIVE
 
+    def activate(self) -> None:
+        from app.exceptions import InvalidStateError
+
+        if self.status not in (UserStatus.PENDING, UserStatus.SUSPENDED):
+            raise InvalidStateError("Only pending or suspended users can be activated")
+        self.status = UserStatus.ACTIVE
+
     def suspend(self) -> None:
         from app.exceptions import InvalidStateError
 
         if self.role == UserRole.ADMIN:
             raise InvalidStateError("Admin accounts cannot be suspended")
         self.status = UserStatus.SUSPENDED
+
+    def soft_delete(self) -> None:
+        from app.exceptions import InvalidStateError
+
+        if self.role == UserRole.ADMIN:
+            raise InvalidStateError("Admin accounts cannot be deleted")
+        if self.status != UserStatus.SUSPENDED:
+            raise InvalidStateError("Only suspended users can be deleted")
+        self.status = UserStatus.DELETED
 
     def can_upload(self, file_size: int) -> bool:
         return (self.storage_used_bytes + file_size) <= self.storage_quota_bytes

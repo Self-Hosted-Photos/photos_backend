@@ -1,6 +1,6 @@
+import contextlib
 import io
 import uuid
-from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
@@ -17,14 +17,16 @@ from app.infrastructure.repositories.user_repo import SQLUserRepository
 from app.infrastructure.storage.base import StorageBackend
 from app.middleware.quota import check_quota
 
-_ALLOWED_PHOTO_MIMES: frozenset[str] = frozenset({
-    "image/jpeg",
-    "image/png",
-    "image/heic",
-    "image/heif",
-    "image/webp",
-    "image/gif",
-})
+_ALLOWED_PHOTO_MIMES: frozenset[str] = frozenset(
+    {
+        "image/jpeg",
+        "image/png",
+        "image/heic",
+        "image/heif",
+        "image/webp",
+        "image/gif",
+    }
+)
 
 _MIME_TO_EXT: dict[str, str] = {
     "image/jpeg": "jpg",
@@ -63,7 +65,7 @@ class TimelineGroup:
 
 @dataclass(frozen=True)
 class GpsCoordinates:
-    latitude: float   # decimal degrees, -90.0 (S) to +90.0 (N)
+    latitude: float  # decimal degrees, -90.0 (S) to +90.0 (N)
     longitude: float  # decimal degrees, -180.0 (W) to +180.0 (E)
 
     def __post_init__(self) -> None:
@@ -87,12 +89,8 @@ def _parse_exif(file_bytes: bytes) -> tuple[date | None, GpsCoordinates | None]:
     exif_ifd = exif_dict.get("Exif", {})
     dt_raw = exif_ifd.get(piexif.ExifIFD.DateTimeOriginal)
     if dt_raw:
-        try:
-            captured_at = datetime.strptime(
-                dt_raw.decode("ascii"), "%Y:%m:%d %H:%M:%S"
-            ).date()
-        except (ValueError, UnicodeDecodeError):
-            pass
+        with contextlib.suppress(ValueError, UnicodeDecodeError):
+            captured_at = datetime.strptime(dt_raw.decode("ascii"), "%Y:%m:%d %H:%M:%S").date()
 
     # GPS IFD — piexif uses integer keys
     gps_ifd = exif_dict.get("GPS", {})
@@ -104,6 +102,7 @@ def _parse_exif(file_bytes: bytes) -> tuple[date | None, GpsCoordinates | None]:
             lng_ref = gps_ifd.get(piexif.GPSIFD.GPSLongitudeRef, b"E")
 
             if lat_dms and lng_dms:
+
                 def _dms_to_decimal(dms: tuple, ref: bytes) -> float:
                     d = dms[0][0] / dms[0][1]
                     m = dms[1][0] / dms[1][1]
@@ -289,7 +288,6 @@ class MediaService:
         return media
 
     async def read_file_bytes(self, path: str) -> bytes:
-        from app.exceptions import StorageError
         try:
             chunks = []
             async for chunk in self._storage.read(path):

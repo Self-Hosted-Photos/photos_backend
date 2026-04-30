@@ -5,16 +5,21 @@ import pytest
 from app.domain.models.user import UserRole, UserStatus
 from app.infrastructure.repositories.user_repo import SQLUserRepository
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-async def _create_admin(client, db, email: str = "admin@test.com", password: str = "adminpass123") -> str:
+
+async def _create_admin(
+    client, db, email: str = "admin@test.com", password: str = "adminpass123"
+) -> str:
     """Register a user, promote to admin+active, return access token."""
-    await client.post("/api/v1/auth/register", json={
-        "email": email,
-        "full_name": "Admin User",
-        "password": password,
-    })
+    await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": email,
+            "full_name": "Admin User",
+            "password": password,
+        },
+    )
     repo = SQLUserRepository(db)
     user = await repo.get_by_email(email)
     user.role = UserRole.ADMIN
@@ -27,15 +32,19 @@ async def _create_admin(client, db, email: str = "admin@test.com", password: str
 
 
 async def _create_pending_user(client, email: str = "pending@test.com") -> dict:
-    r = await client.post("/api/v1/auth/register", json={
-        "email": email,
-        "full_name": "Pending User",
-        "password": "userpass123",
-    })
+    r = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": email,
+            "full_name": "Pending User",
+            "password": "userpass123",
+        },
+    )
     return r.json()
 
 
 # ── GET /admin/users/pending ──────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_get_pending_users_returns_list(client, db):
@@ -56,18 +65,23 @@ async def test_get_pending_users_returns_list(client, db):
 
 @pytest.mark.asyncio
 async def test_non_admin_gets_403_on_pending_users(client, db):
-    await client.post("/api/v1/auth/register", json={
-        "email": "regular_p@test.com",
-        "full_name": "Regular",
-        "password": "userpass123",
-    })
+    await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "regular_p@test.com",
+            "full_name": "Regular",
+            "password": "userpass123",
+        },
+    )
     repo = SQLUserRepository(db)
     user = await repo.get_by_email("regular_p@test.com")
     user.status = UserStatus.ACTIVE
     user.email_verified = True
     await db.flush()
 
-    r = await client.post("/api/v1/auth/login", json={"email": "regular_p@test.com", "password": "userpass123"})
+    r = await client.post(
+        "/api/v1/auth/login", json={"email": "regular_p@test.com", "password": "userpass123"}
+    )
     token = r.json()["access_token"]
 
     r = await client.get(
@@ -84,6 +98,7 @@ async def test_unauthenticated_gets_401_on_pending_users(client, db):
 
 
 # ── POST /admin/users/{id}/approve ────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_approve_pending_user_returns_active(client, db):
@@ -131,6 +146,7 @@ async def test_approve_nonexistent_user_returns_404(client, db):
 
 # ── POST /admin/users/{id}/suspend ────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_suspend_active_user_returns_suspended(client, db):
     token = await _create_admin(client, db, "admin_sp1@test.com")
@@ -162,6 +178,7 @@ async def test_suspend_nonexistent_user_returns_404(client, db):
 
 # ── GET /admin/stats ──────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_get_stats_returns_correct_shape(client, db):
     token = await _create_admin(client, db, "admin_st1@test.com")
@@ -176,6 +193,9 @@ async def test_get_stats_returns_correct_shape(client, db):
     body = r.json()
     assert body["pending_users"] >= 2
     assert body["active_users"] >= 1  # admin itself is active
-    assert body["total_users"] == body["pending_users"] + body["active_users"] + body["suspended_users"]
+    assert (
+        body["total_users"]
+        == body["pending_users"] + body["active_users"] + body["suspended_users"]
+    )
     assert "total_storage_used_bytes" in body
     assert "total_storage_used_gb" in body

@@ -18,6 +18,11 @@ class UserRepository(ABC):
     async def get_pending_users(self, limit: int, offset: int) -> list[User]: ...
 
     @abstractmethod
+    async def get_all_users(
+        self, status: UserStatus | None, limit: int, offset: int
+    ) -> list[User]: ...
+
+    @abstractmethod
     async def count_by_status(self, status: UserStatus) -> int: ...
 
     @abstractmethod
@@ -39,9 +44,7 @@ class SQLUserRepository(UserRepository):
         return result.scalar_one_or_none()
 
     async def get_by_email(self, email: str) -> User | None:
-        result = await self._db.execute(
-            select(User).where(User.email == email.lower().strip())
-        )
+        result = await self._db.execute(select(User).where(User.email == email.lower().strip()))
         return result.scalar_one_or_none()
 
     async def get_pending_users(self, limit: int = 50, offset: int = 0) -> list[User]:
@@ -52,6 +55,15 @@ class SQLUserRepository(UserRepository):
             .limit(limit)
             .offset(offset)
         )
+        return list(result.scalars().all())
+
+    async def get_all_users(
+        self, status: UserStatus | None = None, limit: int = 100, offset: int = 0
+    ) -> list[User]:
+        q = select(User).order_by(User.created_at.desc()).limit(limit).offset(offset)
+        if status is not None:
+            q = q.where(User.status == status)
+        result = await self._db.execute(q)
         return list(result.scalars().all())
 
     async def save(self, user: User) -> User:
@@ -67,9 +79,7 @@ class SQLUserRepository(UserRepository):
         return result.scalar_one()
 
     async def get_total_storage_used(self) -> int:
-        result = await self._db.execute(
-            select(func.sum(User.storage_used_bytes))
-        )
+        result = await self._db.execute(select(func.sum(User.storage_used_bytes)))
         return result.scalar_one_or_none() or 0
 
     async def delete(self, id: uuid.UUID) -> None:
@@ -84,9 +94,7 @@ class EmailTokenRepository:
         self._db = db
 
     async def get_by_token(self, token: str) -> EmailToken | None:
-        result = await self._db.execute(
-            select(EmailToken).where(EmailToken.token == token)
-        )
+        result = await self._db.execute(select(EmailToken).where(EmailToken.token == token))
         return result.scalar_one_or_none()
 
     async def save(self, token: EmailToken) -> EmailToken:

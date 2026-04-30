@@ -5,18 +5,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-# Attach an explicit stdout handler to the app namespace so all app.* loggers
-# are visible in docker logs regardless of uvicorn's logging configuration.
-_app_logger = logging.getLogger("app")
-_app_logger.setLevel(logging.INFO)
-if not _app_logger.handlers:
-    _handler = logging.StreamHandler(sys.stdout)
-    _handler.setLevel(logging.INFO)
-    _handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s - %(message)s"))
-    _app_logger.addHandler(_handler)
-    _app_logger.propagate = False
-
-from app.config import get_settings
 from app.exceptions import (
     AccountNotActiveError,
     AuthorizationError,
@@ -28,6 +16,17 @@ from app.exceptions import (
 )
 from app.middleware.cors import add_cors
 
+# Attach an explicit stdout handler so all app.* loggers are visible in docker
+# logs regardless of uvicorn's logging configuration.
+_app_logger = logging.getLogger("app")
+_app_logger.setLevel(logging.INFO)
+if not _app_logger.handlers:
+    _handler = logging.StreamHandler(sys.stdout)
+    _handler.setLevel(logging.INFO)
+    _handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s - %(message)s"))
+    _app_logger.addHandler(_handler)
+    _app_logger.propagate = False
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -35,12 +34,11 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown: dispose engine
     from app.database import engine
+
     await engine.dispose()
 
 
 def create_app() -> FastAPI:
-    settings = get_settings()
-
     app = FastAPI(
         title="Pixel Vault API",
         version="1.0.0",

@@ -63,6 +63,7 @@ def _clear_refresh_cookie(response: Response) -> None:
 
 # ── POST /auth/register ───────────────────────────────────────────────────────
 
+
 @router.post("/register", status_code=status.HTTP_201_CREATED, response_model=UserResponse)
 async def register(
     data: RegisterRequest,
@@ -74,11 +75,12 @@ async def register(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "EMAIL_ALREADY_EXISTS", "message": str(exc)},
-        )
+        ) from exc
     return user
 
 
 # ── POST /auth/login ──────────────────────────────────────────────────────────
+
 
 @router.post("/login", response_model=TokenResponse)
 async def login(
@@ -98,13 +100,13 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "UNAUTHORIZED", "message": str(exc)},
-        )
+        ) from exc
     except AccountNotActiveError as exc:
         code = "ACCOUNT_PENDING" if "approval" in str(exc) else "ACCOUNT_SUSPENDED"
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": code, "message": str(exc)},
-        )
+        ) from exc
 
     _set_refresh_cookie(
         response,
@@ -117,6 +119,7 @@ async def login(
 
 # ── GET /auth/verify-email ────────────────────────────────────────────────────
 
+
 @router.get("/verify-email", response_model=MessageResponse)
 async def verify_email(
     token: str,
@@ -128,11 +131,12 @@ async def verify_email(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "VALIDATION_ERROR", "message": str(exc)},
-        )
+        ) from exc
     return MessageResponse(message="Email verified successfully. Awaiting admin approval.")
 
 
 # ── POST /auth/resend-verification ────────────────────────────────────────────
+
 
 @router.post("/resend-verification", response_model=MessageResponse)
 async def resend_verification(
@@ -140,10 +144,13 @@ async def resend_verification(
     auth: Annotated[AuthService, Depends(_get_auth_service)],
 ):
     await auth.resend_verification(data.email)
-    return MessageResponse(message="If that email exists and is unverified, a new link has been sent.")
+    return MessageResponse(
+        message="If that email exists and is unverified, a new link has been sent."
+    )
 
 
 # ── POST /auth/refresh ────────────────────────────────────────────────────────
+
 
 @router.post("/refresh", response_model=RefreshResponse)
 async def refresh(
@@ -162,11 +169,12 @@ async def refresh(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "UNAUTHORIZED", "message": str(exc)},
-        )
+        ) from exc
     return RefreshResponse(access_token=access_token)
 
 
 # ── POST /auth/logout ─────────────────────────────────────────────────────────
+
 
 @router.post("/logout", response_model=MessageResponse)
 async def logout(
@@ -183,6 +191,7 @@ async def logout(
 
 # ── POST /auth/forgot-password ────────────────────────────────────────────────
 
+
 @router.post("/forgot-password", response_model=MessageResponse)
 async def forgot_password(
     data: ForgotPasswordRequest,
@@ -193,6 +202,7 @@ async def forgot_password(
 
 
 # ── POST /auth/reset-password ─────────────────────────────────────────────────
+
 
 @router.post("/reset-password", response_model=MessageResponse)
 async def reset_password(
@@ -205,5 +215,5 @@ async def reset_password(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "VALIDATION_ERROR", "message": str(exc)},
-        )
+        ) from exc
     return MessageResponse(message="Password reset successfully. You can now log in.")

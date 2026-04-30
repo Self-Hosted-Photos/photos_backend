@@ -48,7 +48,7 @@ coverage.xml
 logs/
 
 # ─── Storage (local dev media files — never commit real uploads) ─────────────
-storage/
+/storage/
 
 # ─── OS / editor ─────────────────────────────────────────────────────────────
 .DS_Store

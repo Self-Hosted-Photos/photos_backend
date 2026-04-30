@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field
 
 from app.domain.models.user import UserRole, UserStatus
 
@@ -50,3 +50,7 @@ class AdminStats(BaseModel):
     suspended_users: int
     total_storage_used_bytes: int
     total_storage_used_gb: float
+
+
+class QuotaUpdateRequest(BaseModel):
+    storage_quota_bytes: int = Field(gt=0)

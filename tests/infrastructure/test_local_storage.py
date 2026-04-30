@@ -13,6 +13,7 @@ def storage(tmp_path) -> LocalStorageBackend:
 
 # ── save ──────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_save_writes_file_and_returns_path(storage, tmp_path):
     data = io.BytesIO(b"hello world")
@@ -36,6 +37,7 @@ async def test_save_overwrites_existing_file(storage, tmp_path):
 
 
 # ── read ──────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_read_streams_correct_content(storage):
@@ -65,6 +67,7 @@ async def test_read_large_file_yields_multiple_chunks(storage, tmp_path):
 
 # ── delete ────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_delete_removes_file(storage, tmp_path):
     await storage.save("originals/u/del.jpg", io.BytesIO(b"bye"), "image/jpeg")
@@ -79,6 +82,7 @@ async def test_delete_is_idempotent_for_missing_file(storage):
 
 # ── get_url ───────────────────────────────────────────────────────────────────
 
+
 def test_get_url_returns_correct_url(storage):
     url = storage.get_url("originals/user1/photo.jpg")
     assert url == "http://localhost:8000/storage/originals/user1/photo.jpg"
@@ -90,6 +94,7 @@ def test_get_url_strips_trailing_slash_from_base():
 
 
 # ── exists ────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_exists_returns_true_for_saved_file(storage):

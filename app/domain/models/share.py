@@ -1,6 +1,6 @@
 import enum
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, func
 from sqlalchemy.dialects.postgresql import UUID
@@ -24,9 +24,7 @@ class Share(Base):
     # - Cannot share with yourself (enforced in SharingService)
     # - Expired shares are invalid (is_valid() returns False)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     owner_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
@@ -54,15 +52,13 @@ class Share(Base):
 
     def is_valid(self) -> bool:
         if self.expires_at:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             exp = self.expires_at
             # SQLite stores datetimes without timezone; assume UTC if naive
             if exp.tzinfo is None:
-                exp = exp.replace(tzinfo=timezone.utc)
+                exp = exp.replace(tzinfo=UTC)
             if now > exp:
                 return False
         return True
 
-    __table_args__ = (
-        Index("idx_shares_shared_with", "shared_with_user_id"),
-    )
+    __table_args__ = (Index("idx_shares_shared_with", "shared_with_user_id"),)

@@ -1,5 +1,4 @@
-from typing import Annotated
-from uuid import UUID
+from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -8,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
 from app.database import get_db
-from app.exceptions import AccountNotActiveError, AuthorizationError
 from app.infrastructure.storage.base import StorageBackend
 from app.infrastructure.storage.local import LocalStorageBackend
 
@@ -31,14 +29,14 @@ def _decode_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "UNAUTHORIZED", "message": "Invalid or expired token"},
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from None
 
 
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     settings: Annotated[Settings, Depends(get_settings)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> dict[str, Any]:
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -63,8 +61,8 @@ async def get_current_user(
 
 
 async def get_admin_user(
-    current_user: Annotated[dict, Depends(get_current_user)],
-) -> dict:
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+) -> dict[str, Any]:
     if current_user.get("role") != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -83,7 +81,7 @@ def get_storage(settings: Annotated[Settings, Depends(get_settings)]) -> Storage
 
 
 # Convenience type aliases
-CurrentUser = Annotated[dict, Depends(get_current_user)]
-AdminUser = Annotated[dict, Depends(get_admin_user)]
+CurrentUser = Annotated[dict[str, Any], Depends(get_current_user)]
+AdminUser = Annotated[dict[str, Any], Depends(get_admin_user)]
 DB = Annotated[AsyncSession, Depends(get_db)]
 Storage = Annotated[StorageBackend, Depends(get_storage)]

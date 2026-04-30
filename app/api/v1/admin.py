@@ -67,6 +67,15 @@ async def approve_user(
     return await service.approve_user(user_id=user_id, admin_id=admin_id)
 
 
+@router.post("/users/{user_id}/activate", response_model=UserResponse)
+async def activate_user(
+    user_id: uuid.UUID,
+    _admin: AdminUser,
+    service: Annotated[AdminService, Depends(_get_admin_service)],
+) -> User:
+    return await service.activate_user(user_id=user_id)
+
+
 @router.post("/users/{user_id}/suspend", response_model=UserResponse)
 async def suspend_user(
     user_id: uuid.UUID,
@@ -86,6 +95,15 @@ async def update_user_quota(
     return await service.update_user_quota(
         user_id=user_id, storage_quota_bytes=body.storage_quota_bytes
     )
+
+
+@router.delete("/users/{user_id}", status_code=204)
+async def delete_user(
+    user_id: uuid.UUID,
+    _admin: AdminUser,
+    service: Annotated[AdminService, Depends(_get_admin_service)],
+) -> None:
+    await service.delete_user(user_id=user_id)
 
 
 @router.get("/stats", response_model=AdminStats)

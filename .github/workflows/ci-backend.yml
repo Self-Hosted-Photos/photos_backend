@@ -1,8 +1,6 @@
 name: CI — photos_backend
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
@@ -23,9 +21,9 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER:     ci
+          POSTGRES_USER: ci
           POSTGRES_PASSWORD: ci
-          POSTGRES_DB:       pixelvault_ci
+          POSTGRES_DB: pixelvault_ci
         ports:
           - 5432:5432
         options: >-
@@ -38,9 +36,9 @@ jobs:
       # Used by alembic upgrade head step
       DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/pixelvault_ci
       # Minimal vars so Settings() initialises without a .env file
-      SECRET_KEY:    ci-secret-key-not-for-production-use
-      APP_ENV:       development
-      STORAGE_ROOT:  /tmp/storage
+      SECRET_KEY: ci-secret-key-not-for-production-use
+      APP_ENV: development
+      STORAGE_ROOT: /tmp/storage
 
     steps:
       # ── Checkout ────────────────────────────────────────────────────────────

@@ -40,6 +40,7 @@ def _parse_range_header(range_header: str, total: int) -> tuple[int, int]:
 
 # ── POST /media/upload ────────────────────────────────────────────────────────
 
+
 @router.post("/upload", response_model=MediaResponse, status_code=status.HTTP_202_ACCEPTED)
 async def upload_media(
     current_user: CurrentUser,
@@ -59,6 +60,7 @@ async def upload_media(
 
 # ── GET /media ────────────────────────────────────────────────────────────────
 
+
 @router.get("", response_model=PaginatedMediaResponse)
 async def list_media(
     current_user: CurrentUser,
@@ -77,7 +79,10 @@ async def list_media(
     if any(p is not None for p in loc_params) and not all(p is not None for p in loc_params):
         raise HTTPException(
             status_code=400,
-            detail={"code": "VALIDATION_ERROR", "message": "All four location bounds (lat_min, lat_max, lng_min, lng_max) must be provided together"},
+            detail={
+                "code": "VALIDATION_ERROR",
+                "message": "All four location bounds (lat_min, lat_max, lng_min, lng_max) must be provided together",
+            },
         )
 
     result = await service.list_media(
@@ -104,6 +109,7 @@ async def list_media(
 
 # ── GET /media/timeline ───────────────────────────────────────────────────────
 
+
 @router.get("/timeline", response_model=list[TimelineGroupResponse])
 async def get_timeline(
     current_user: CurrentUser,
@@ -122,6 +128,7 @@ async def get_timeline(
 
 
 # ── GET /media/{id}/thumbnail ─────────────────────────────────────────────────
+
 
 @router.get("/{media_id}/thumbnail")
 async def stream_thumbnail(
@@ -145,6 +152,7 @@ async def stream_thumbnail(
 
 
 # ── GET /media/{id}/stream ────────────────────────────────────────────────────
+
 
 @router.get("/{media_id}/stream")
 async def stream_media(

@@ -15,16 +15,12 @@ class SQLShareRepository:
         return result.scalar_one_or_none()
 
     async def get_by_token(self, token: str) -> Share | None:
-        result = await self._db.execute(
-            select(Share).where(Share.public_token == token)
-        )
+        result = await self._db.execute(select(Share).where(Share.public_token == token))
         return result.scalar_one_or_none()
 
     async def get_by_owner(self, owner_id: uuid.UUID) -> list[Share]:
         result = await self._db.execute(
-            select(Share)
-            .where(Share.owner_id == owner_id)
-            .order_by(Share.created_at.desc())
+            select(Share).where(Share.owner_id == owner_id).order_by(Share.created_at.desc())
         )
         return list(result.scalars().all())
 

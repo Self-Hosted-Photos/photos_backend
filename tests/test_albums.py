@@ -11,6 +11,7 @@ from app.infrastructure.repositories.user_repo import SQLUserRepository
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _make_jpeg() -> bytes:
     img = Image.new("RGB", (100, 100), color=(100, 149, 237))
     buf = io.BytesIO()
@@ -32,9 +33,7 @@ async def _create_active_user(
     user.email_verified = True
     await db.flush()
 
-    r = await client.post(
-        "/api/v1/auth/login", json={"email": email, "password": password}
-    )
+    r = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
     return r.json()["access_token"]
 
 
@@ -51,6 +50,7 @@ async def _upload_photo(client, token: str) -> dict:
 
 
 # ── POST /albums ──────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_create_album_returns_201(client, db):
@@ -103,6 +103,7 @@ async def test_create_album_unauthenticated_returns_401(client, db):
 
 # ── GET /albums ───────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_list_albums_returns_empty_for_new_user(client, db):
     token = await _create_active_user(client, db, "alb_list1@test.com")
@@ -154,6 +155,7 @@ async def test_list_albums_isolates_between_users(client, db):
 
 
 # ── GET /albums/{id} ──────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_get_album_returns_detail_with_items(client, db):
@@ -211,6 +213,7 @@ async def test_get_album_wrong_owner_returns_403(client, db):
 
 # ── PUT /albums/{id} ──────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_update_album_title(client, db):
     token = await _create_active_user(client, db, "alb_upd1@test.com")
@@ -245,6 +248,7 @@ async def test_update_album_not_found_returns_404(client, db):
 
 
 # ── DELETE /albums/{id} ───────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_delete_album_returns_204(client, db):
@@ -304,6 +308,7 @@ async def test_delete_album_media_records_survive(client, db):
 
 
 # ── POST /albums/{id}/media ───────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_add_media_to_album_returns_detail(client, db):
@@ -436,6 +441,7 @@ async def test_add_nonexistent_media_returns_404(client, db):
 
 
 # ── DELETE /albums/{id}/media/{media_id} ─────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_remove_media_from_album_returns_204(client, db):

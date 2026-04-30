@@ -50,7 +50,9 @@ class SQLAlbumRepository:
         )
         return result.scalar_one_or_none() is not None
 
-    async def add_media(self, album_id: uuid.UUID, media_id: uuid.UUID, sort_order: int = 0) -> None:
+    async def add_media(
+        self, album_id: uuid.UUID, media_id: uuid.UUID, sort_order: int = 0
+    ) -> None:
         entry = AlbumMedia(album_id=album_id, media_id=media_id, sort_order=sort_order)
         self._db.add(entry)
         await self._db.flush()

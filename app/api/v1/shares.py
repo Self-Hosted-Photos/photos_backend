@@ -21,6 +21,7 @@ def _get_sharing_service(db: DB) -> SharingService:
 
 # ── POST /shares ──────────────────────────────────────────────────────────────
 
+
 @router.post("", response_model=ShareResponse, status_code=status.HTTP_201_CREATED)
 async def create_share(
     body: ShareCreate,
@@ -41,6 +42,7 @@ async def create_share(
 
 # ── GET /shares ───────────────────────────────────────────────────────────────
 
+
 @router.get("", response_model=list[ShareResponse])
 async def list_my_shares(
     current_user: CurrentUser,
@@ -52,6 +54,7 @@ async def list_my_shares(
 
 # ── GET /shares/with-me ───────────────────────────────────────────────────────
 
+
 @router.get("/with-me", response_model=list[ShareResponse])
 async def list_shares_with_me(
     current_user: CurrentUser,
@@ -62,6 +65,7 @@ async def list_shares_with_me(
 
 
 # ── DELETE /shares/{id} ───────────────────────────────────────────────────────
+
 
 @router.delete("/{share_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def revoke_share(
@@ -76,6 +80,7 @@ async def revoke_share(
 
 
 # ── GET /public/{token} ───────────────────────────────────────────────────────
+
 
 @public_router.get("/{token}", response_model=PublicShareResponse)
 async def resolve_public_share(

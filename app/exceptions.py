@@ -4,6 +4,7 @@ class PixelVaultError(Exception):
 
 # ─── Domain errors ────────────────────────────────────────────────────────────
 
+
 class DomainError(PixelVaultError):
     """Base for domain-layer errors."""
 
@@ -21,6 +22,7 @@ class AuthorizationError(DomainError):
 
 
 # ─── Application errors ───────────────────────────────────────────────────────
+
 
 class ApplicationError(PixelVaultError):
     """Base for service-layer errors."""
@@ -43,6 +45,7 @@ class AccountNotActiveError(ApplicationError):
 
 
 # ─── Infrastructure errors ────────────────────────────────────────────────────
+
 
 class InfrastructureError(PixelVaultError):
     """Base for infrastructure-layer errors."""

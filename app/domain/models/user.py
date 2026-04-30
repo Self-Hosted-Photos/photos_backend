@@ -35,9 +35,7 @@ class User(Base):
     # - Admin role cannot be self-assigned
     # - Suspended users cannot log in
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -76,12 +74,14 @@ class User(Base):
     # Domain methods
     def approve(self) -> None:
         from app.exceptions import InvalidStateError
+
         if self.status != UserStatus.PENDING:
             raise InvalidStateError("Only pending users can be approved")
         self.status = UserStatus.ACTIVE
 
     def suspend(self) -> None:
         from app.exceptions import InvalidStateError
+
         if self.role == UserRole.ADMIN:
             raise InvalidStateError("Admin accounts cannot be suspended")
         self.status = UserStatus.SUSPENDED
@@ -99,15 +99,15 @@ class User(Base):
 class EmailToken(Base):
     __tablename__ = "email_tokens"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     token: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     type: Mapped[EmailTokenType] = mapped_column(
-        Enum(EmailTokenType, name="email_token_type", values_callable=lambda e: [x.value for x in e]),
+        Enum(
+            EmailTokenType, name="email_token_type", values_callable=lambda e: [x.value for x in e]
+        ),
         nullable=False,
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -121,9 +121,7 @@ class EmailToken(Base):
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )

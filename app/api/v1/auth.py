@@ -63,6 +63,7 @@ def _clear_refresh_cookie(response: Response) -> None:
 
 # ── POST /auth/register ───────────────────────────────────────────────────────
 
+
 @router.post("/register", status_code=status.HTTP_201_CREATED, response_model=UserResponse)
 async def register(
     data: RegisterRequest,
@@ -79,6 +80,7 @@ async def register(
 
 
 # ── POST /auth/login ──────────────────────────────────────────────────────────
+
 
 @router.post("/login", response_model=TokenResponse)
 async def login(
@@ -117,6 +119,7 @@ async def login(
 
 # ── GET /auth/verify-email ────────────────────────────────────────────────────
 
+
 @router.get("/verify-email", response_model=MessageResponse)
 async def verify_email(
     token: str,
@@ -134,16 +137,20 @@ async def verify_email(
 
 # ── POST /auth/resend-verification ────────────────────────────────────────────
 
+
 @router.post("/resend-verification", response_model=MessageResponse)
 async def resend_verification(
     data: ResendVerificationRequest,
     auth: Annotated[AuthService, Depends(_get_auth_service)],
 ):
     await auth.resend_verification(data.email)
-    return MessageResponse(message="If that email exists and is unverified, a new link has been sent.")
+    return MessageResponse(
+        message="If that email exists and is unverified, a new link has been sent."
+    )
 
 
 # ── POST /auth/refresh ────────────────────────────────────────────────────────
+
 
 @router.post("/refresh", response_model=RefreshResponse)
 async def refresh(
@@ -168,6 +175,7 @@ async def refresh(
 
 # ── POST /auth/logout ─────────────────────────────────────────────────────────
 
+
 @router.post("/logout", response_model=MessageResponse)
 async def logout(
     request: Request,
@@ -183,6 +191,7 @@ async def logout(
 
 # ── POST /auth/forgot-password ────────────────────────────────────────────────
 
+
 @router.post("/forgot-password", response_model=MessageResponse)
 async def forgot_password(
     data: ForgotPasswordRequest,
@@ -193,6 +202,7 @@ async def forgot_password(
 
 
 # ── POST /auth/reset-password ─────────────────────────────────────────────────
+
 
 @router.post("/reset-password", response_model=MessageResponse)
 async def reset_password(

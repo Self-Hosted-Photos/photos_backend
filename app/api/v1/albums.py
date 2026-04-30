@@ -23,6 +23,7 @@ def _get_album_service(db: DB) -> AlbumService:
 
 # ── POST /albums ──────────────────────────────────────────────────────────────
 
+
 @router.post("", response_model=AlbumResponse, status_code=status.HTTP_201_CREATED)
 async def create_album(
     body: AlbumCreate,
@@ -39,6 +40,7 @@ async def create_album(
 
 # ── GET /albums ───────────────────────────────────────────────────────────────
 
+
 @router.get("", response_model=list[AlbumResponse])
 async def list_albums(
     current_user: CurrentUser,
@@ -49,6 +51,7 @@ async def list_albums(
 
 
 # ── GET /albums/{id} ──────────────────────────────────────────────────────────
+
 
 @router.get("/{album_id}", response_model=AlbumDetailResponse)
 async def get_album(
@@ -69,6 +72,7 @@ async def get_album(
 
 # ── PUT /albums/{id} ──────────────────────────────────────────────────────────
 
+
 @router.put("/{album_id}", response_model=AlbumResponse)
 async def update_album(
     album_id: uuid.UUID,
@@ -88,6 +92,7 @@ async def update_album(
 
 # ── DELETE /albums/{id} ───────────────────────────────────────────────────────
 
+
 @router.delete("/{album_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_album(
     album_id: uuid.UUID,
@@ -101,6 +106,7 @@ async def delete_album(
 
 
 # ── POST /albums/{id}/media ───────────────────────────────────────────────────
+
 
 @router.post("/{album_id}/media", response_model=AlbumDetailResponse)
 async def add_media_to_album(
@@ -122,6 +128,7 @@ async def add_media_to_album(
 
 
 # ── DELETE /albums/{id}/media/{media_id} ──────────────────────────────────────
+
 
 @router.delete("/{album_id}/media/{media_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_media_from_album(

@@ -75,9 +75,7 @@ class AdminService:
         user.storage_quota_bytes = storage_quota_bytes
         return await self._users.save(user)
 
-    async def get_all_media(
-        self, limit: int = 50, offset: int = 0
-    ) -> tuple[list[Media], int]:
+    async def get_all_media(self, limit: int = 50, offset: int = 0) -> tuple[list[Media], int]:
         items = await self._media.get_all(limit=limit, offset=offset)
         total = await self._media.count_all()
         return items, total
@@ -100,5 +98,5 @@ class AdminService:
             active_users=active,
             suspended_users=suspended,
             total_storage_used_bytes=total_storage,
-            total_storage_used_gb=round(total_storage / (1024 ** 3), 2),
+            total_storage_used_gb=round(total_storage / (1024**3), 2),
         )

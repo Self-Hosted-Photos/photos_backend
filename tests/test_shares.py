@@ -10,6 +10,7 @@ from app.infrastructure.repositories.user_repo import SQLUserRepository
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _make_jpeg() -> bytes:
     img = Image.new("RGB", (100, 100), color=(100, 149, 237))
     buf = io.BytesIO()
@@ -31,9 +32,7 @@ async def _create_active_user(
     user.email_verified = True
     await db.flush()
 
-    r = await client.post(
-        "/api/v1/auth/login", json={"email": email, "password": password}
-    )
+    r = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
     return r.json()["access_token"]
 
 
@@ -68,6 +67,7 @@ async def _get_user_id(db, email: str) -> str:
 
 
 # ── POST /shares ──────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_create_public_link_for_media_returns_201_with_token(client, db):
@@ -224,6 +224,7 @@ async def test_create_share_unauthenticated_returns_401(client, db):
 
 # ── GET /shares ───────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_list_my_shares_returns_owned_shares(client, db):
     token = await _create_active_user(client, db, "shr_lst1@test.com")
@@ -253,6 +254,7 @@ async def test_list_my_shares_returns_empty_for_new_user(client, db):
 
 # ── GET /shares/with-me ───────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_list_shares_with_me(client, db):
     token_a = await _create_active_user(client, db, "shr_wm_a@test.com")
@@ -270,9 +272,7 @@ async def test_list_shares_with_me(client, db):
         },
     )
 
-    r = await client.get(
-        "/api/v1/shares/with-me", headers={"Authorization": f"Bearer {token_b}"}
-    )
+    r = await client.get("/api/v1/shares/with-me", headers={"Authorization": f"Bearer {token_b}"})
     assert r.status_code == 200
     shares = r.json()
     assert len(shares) == 1
@@ -280,6 +280,7 @@ async def test_list_shares_with_me(client, db):
 
 
 # ── DELETE /shares/{id} ───────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_revoke_share_returns_204(client, db):
@@ -300,9 +301,7 @@ async def test_revoke_share_returns_204(client, db):
     assert r.status_code == 204
 
     # Share should no longer be listed
-    list_r = await client.get(
-        "/api/v1/shares", headers={"Authorization": f"Bearer {token}"}
-    )
+    list_r = await client.get("/api/v1/shares", headers={"Authorization": f"Bearer {token}"})
     assert list_r.json() == []
 
 
@@ -338,6 +337,7 @@ async def test_revoke_nonexistent_share_returns_404(client, db):
 
 
 # ── GET /public/{token} ───────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_resolve_public_share_for_media_returns_200(client, db):

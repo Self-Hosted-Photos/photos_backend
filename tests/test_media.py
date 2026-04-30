@@ -9,6 +9,7 @@ from app.infrastructure.repositories.user_repo import SQLUserRepository
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _make_jpeg(width: int = 100, height: int = 150) -> bytes:
     img = Image.new("RGB", (width, height), color=(100, 149, 237))
     buf = io.BytesIO()
@@ -34,6 +35,7 @@ def _make_jpeg_with_exif(capture_date: str = "2024:03:15 10:30:00") -> bytes:
 def _make_jpeg_with_gps() -> bytes:
     """Return a JPEG with GPS coordinates (Sydney, Australia) in EXIF."""
     jpeg_bytes = _make_jpeg()
+
     # Sydney: -33.8688, 151.2093
     def _to_rational(val: float) -> tuple:
         d = int(val)
@@ -60,13 +62,18 @@ def _make_jpeg_with_gps() -> bytes:
     return output.getvalue()
 
 
-async def _create_active_user(client, db, email: str = "user@test.com", password: str = "pass1234") -> str:
+async def _create_active_user(
+    client, db, email: str = "user@test.com", password: str = "pass1234"
+) -> str:
     """Register user, activate, return access token."""
-    await client.post("/api/v1/auth/register", json={
-        "email": email,
-        "full_name": "Test User",
-        "password": password,
-    })
+    await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": email,
+            "full_name": "Test User",
+            "password": password,
+        },
+    )
     repo = SQLUserRepository(db)
     user = await repo.get_by_email(email)
     user.status = UserStatus.ACTIVE
@@ -78,6 +85,7 @@ async def _create_active_user(client, db, email: str = "user@test.com", password
 
 
 # ── POST /media/upload ────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_upload_jpeg_returns_202_with_ready_status(client, db):
@@ -224,6 +232,7 @@ async def test_upload_updates_user_storage_used(client, db):
 
 # ── GET /media ────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_list_media_returns_paginated_response(client, db):
     token = await _create_active_user(client, db, "list1@test.com")
@@ -288,6 +297,7 @@ async def test_list_media_unauthenticated_returns_401(client, db):
 
 # ── GET /media/timeline ───────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_timeline_groups_by_month(client, db):
     token = await _create_active_user(client, db, "tl1@test.com")
@@ -320,6 +330,7 @@ async def test_timeline_groups_by_month(client, db):
 
 
 # ── GET /media/{id}/thumbnail ─────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_stream_thumbnail_returns_jpeg(client, db):
@@ -362,6 +373,7 @@ async def test_stream_thumbnail_wrong_owner_returns_403(client, db):
 
 
 # ── GET /media/{id}/stream ────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_stream_media_returns_full_content(client, db):

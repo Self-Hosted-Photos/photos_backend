@@ -24,9 +24,7 @@ class Share(Base):
     # - Cannot share with yourself (enforced in SharingService)
     # - Expired shares are invalid (is_valid() returns False)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     owner_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
@@ -63,6 +61,4 @@ class Share(Base):
                 return False
         return True
 
-    __table_args__ = (
-        Index("idx_shares_shared_with", "shared_with_user_id"),
-    )
+    __table_args__ = (Index("idx_shares_shared_with", "shared_with_user_id"),)

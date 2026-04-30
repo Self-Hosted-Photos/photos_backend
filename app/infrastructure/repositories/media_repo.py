@@ -114,10 +114,7 @@ class SQLMediaRepository(MediaRepository):
 
     async def get_all(self, limit: int = 50, offset: int = 0) -> list[Media]:
         result = await self._db.execute(
-            select(Media)
-            .order_by(Media.uploaded_at.desc())
-            .limit(limit)
-            .offset(offset)
+            select(Media).order_by(Media.uploaded_at.desc()).limit(limit).offset(offset)
         )
         return list(result.scalars().all())
 

@@ -4,8 +4,10 @@ name: Deploy — Backend
 # Build → Deploy → Health check → Migrate → Verify → Rollback on failure.
 
 on:
-  push:
-    branches: [main]
+  pull_request:
+    types: [closed]
+    branches:
+      - main
 
 jobs:
   deploy:
@@ -14,12 +16,12 @@ jobs:
     environment: production
 
     env:
-      CF_SERVICE_TOKEN_CLIENT_ID:     ${{ secrets.CF_SERVICE_TOKEN_CLIENT_ID }}
+      CF_SERVICE_TOKEN_CLIENT_ID: ${{ secrets.CF_SERVICE_TOKEN_CLIENT_ID }}
       CF_SERVICE_TOKEN_CLIENT_SECRET: ${{ secrets.CF_SERVICE_TOKEN_CLIENT_SECRET }}
-      SERVER_USER_GITHUB:             ${{ secrets.SERVER_USER_GITHUB }}
-      SSH_PRIVATE_KEY:                ${{ secrets.HOME_SERVER_GITHUB_USER_SSH_PVTKEY }}
-      DEPLOY_DIR:                     ${{ secrets.PIXELVAULT_DEPLOY_DIR }}
-      NGINX_PORT:                     ${{ secrets.PIXELVAULT_NGINX_PORT }}
+      SERVER_USER_GITHUB: ${{ secrets.SERVER_USER_GITHUB }}
+      SSH_PRIVATE_KEY: ${{ secrets.HOME_SERVER_GITHUB_USER_SSH_PVTKEY }}
+      DEPLOY_DIR: ${{ secrets.PIXELVAULT_DEPLOY_DIR }}
+      NGINX_PORT: ${{ secrets.PIXELVAULT_NGINX_PORT }}
 
     steps:
       - name: Checkout

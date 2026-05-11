@@ -1,0 +1,160 @@
+name: Deploy — Backend
+
+# Runs on push to main (after a PR is merged and its CI passes on the PR).
+# Build → Deploy → Health check → Migrate → Verify → Rollback on failure.
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy backend
+    runs-on: ubuntu-latest
+    environment: production
+
+    env:
+      CF_SERVICE_TOKEN_CLIENT_ID:     ${{ secrets.CF_SERVICE_TOKEN_CLIENT_ID }}
+      CF_SERVICE_TOKEN_CLIENT_SECRET: ${{ secrets.CF_SERVICE_TOKEN_CLIENT_SECRET }}
+      SERVER_USER_GITHUB:             ${{ secrets.SERVER_USER_GITHUB }}
+      SSH_PRIVATE_KEY:                ${{ secrets.HOME_SERVER_GITHUB_USER_SSH_PVTKEY }}
+      DEPLOY_DIR:                     ${{ secrets.PIXELVAULT_DEPLOY_DIR }}
+      NGINX_PORT:                     ${{ secrets.PIXELVAULT_NGINX_PORT }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Install cloudflared ───────────────────────────────────────────────
+      - name: Install cloudflared
+        run: |
+          curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg \
+            | sudo gpg --dearmor -o /usr/share/keyrings/cloudflare-main.gpg
+          echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" \
+            | sudo tee /etc/apt/sources.list.d/cloudflared.list
+          sudo apt-get update -qq && sudo apt-get install -y cloudflared
+
+      # ── Configure SSH via Cloudflare Access tunnel ───────────────────────
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat > ~/.ssh/config <<EOF
+          Host home-server
+            HostName bot.aadityakasbekar.com
+            User ${SERVER_USER_GITHUB}
+            IdentityFile ~/.ssh/id_ed25519
+            StrictHostKeyChecking no
+            UserKnownHostsFile /dev/null
+            ProxyCommand cloudflared access ssh --hostname %h --service-token-id ${CF_SERVICE_TOKEN_CLIENT_ID} --service-token-secret ${CF_SERVICE_TOKEN_CLIENT_SECRET}
+          EOF
+
+      - name: Verify SSH connection
+        run: ssh home-server "echo 'Connection OK'"
+
+      # ── Tag current image as rollback point ───────────────────────────────
+      # Must happen before the build overwrites :latest.
+      - name: Tag rollback image
+        run: |
+          ssh home-server "
+            docker tag photos_infra-backend:latest photos_infra-backend:rollback 2>/dev/null \
+              && echo 'Rollback image saved' \
+              || echo 'No existing image to tag (first deploy)'
+          "
+
+      # ── Sync source code to server ────────────────────────────────────────
+      - name: Sync source to server
+        run: |
+          rsync -az --delete \
+            --exclude='.git' \
+            --exclude='.venv' \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            --exclude='.pytest_cache' \
+            --exclude='storage' \
+            ./ "home-server:${DEPLOY_DIR}/photos_backend/"
+
+      # ── Build new Docker image ────────────────────────────────────────────
+      - name: Build backend image
+        id: build
+        run: |
+          ssh home-server "
+            cd '${DEPLOY_DIR}/photos_infra'
+            docker compose build backend
+          "
+
+      # ── Start updated container ───────────────────────────────────────────
+      - name: Start backend
+        id: start
+        run: |
+          ssh home-server "
+            cd '${DEPLOY_DIR}/photos_infra'
+            docker compose up -d --no-build backend
+          "
+
+      # ── Wait for Docker health check to pass ──────────────────────────────
+      - name: Wait for health check
+        id: health_docker
+        run: |
+          ssh home-server "
+            for i in \$(seq 1 24); do
+              CONTAINER=\$(docker compose -f '${DEPLOY_DIR}/photos_infra/docker-compose.yml' ps -q backend 2>/dev/null)
+              STATUS=\$(docker inspect --format='{{.State.Health.Status}}' \"\$CONTAINER\" 2>/dev/null || echo 'unknown')
+              if [ \"\$STATUS\" = 'healthy' ]; then
+                echo \"Backend healthy after \$((i * 5))s\"
+                exit 0
+              fi
+              echo \"  [\$i/24] status=\$STATUS — waiting 5s...\"
+              sleep 5
+            done
+            echo 'ERROR: backend did not become healthy within 120s'
+            docker compose -f '${DEPLOY_DIR}/photos_infra/docker-compose.yml' logs backend --tail 30
+            exit 1
+          "
+
+      # ── Run database migrations ───────────────────────────────────────────
+      - name: Apply migrations
+        id: migrate
+        run: |
+          ssh home-server "
+            cd '${DEPLOY_DIR}/photos_infra'
+            docker compose exec -T backend alembic upgrade head
+          "
+
+      # ── Final end-to-end health check ─────────────────────────────────────
+      - name: Verify deployment
+        id: verify
+        run: |
+          ssh home-server "curl -sf http://127.0.0.1:${NGINX_PORT}/health"
+          echo "Deploy of commit ${{ github.sha }} complete"
+
+      # ── Rollback on failure ───────────────────────────────────────────────
+      # Runs when any step above fails. Restores the :rollback image and,
+      # if the migration step already ran successfully, downgrades it.
+      - name: Rollback
+        if: failure()
+        run: |
+          echo "==> Deployment failed — rolling back"
+
+          # Downgrade migration only if it ran successfully (i.e., a step
+          # that runs after migrate failed — meaning migrate itself was OK).
+          if [ "${{ steps.migrate.outcome }}" = "success" ]; then
+            echo "==> Reverting migration"
+            ssh home-server "
+              cd '${DEPLOY_DIR}/photos_infra'
+              docker compose exec -T backend alembic downgrade -1 || true
+            "
+          fi
+
+          # Restore previous Docker image if the container was started.
+          if [ "${{ steps.start.outcome }}" = "success" ]; then
+            echo "==> Restoring rollback image"
+            ssh home-server "
+              cd '${DEPLOY_DIR}/photos_infra'
+              docker compose stop backend
+              docker tag photos_infra-backend:rollback photos_infra-backend:latest 2>/dev/null || true
+              docker compose up -d --no-build backend
+              echo 'Rollback complete'
+            "
+          fi

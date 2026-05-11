@@ -80,7 +80,14 @@
 - [ ] **[BACKLOG-003]** `Password reset flow (forgot/reset endpoints)` · reason: Admin can manually reset during MVP; full self-serve reset is post-MVP
 - [ ] **[BACKLOG-004]** `User profile update + avatar upload (PUT /users/me)` · reason: Read-only profile sufficient for MVP; update is a day-2 feature
 - [ ] **[BACKLOG-005]** `GET /media/map endpoint` · reason: Map view is a Phase 2 UI feature; GPS data is captured at upload already, so map endpoint can be added without schema changes
-- [ ] **[BACKLOG-006]** `Full admin moderation routes (GET /admin/media, DELETE /admin/media/{id})` · reason: Basic user approval covers MVP admin needs; content moderation added in post-MVP sprint
+- [x] **[BACKLOG-006]** `Full admin moderation routes (GET /admin/media, DELETE /admin/media/{id})` · completed 2026-04-29 (unlocked by photos_admin_ui Sprint 2 S2-004 Moderation screen)
+- [x] **[BACKLOG-008]** `User state machine — activate + soft delete` · completed 2026-04-30
+  - `POST /admin/users/{id}/activate` — transitions pending/suspended → active
+  - `DELETE /admin/users/{id}` — soft delete (suspended → deleted, row stays in DB)
+  - Migration `0003_add_deleted_user_status.py` — `ALTER TYPE user_status ADD VALUE 'deleted'`
+  - `get_all_users()` always excludes `deleted` users from admin list views
+  - `User.activate()` + `User.soft_delete()` domain methods with guard invariants
+  - 6 new tests in `test_admin.py` → 95/95 total
 - [ ] **[BACKLOG-007]** `EXIF metadata strip for public shares` · reason: Functional photos MVP doesn't require privacy-stripping; add before enabling public sharing widely
 
 ---

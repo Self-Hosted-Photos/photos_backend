@@ -82,7 +82,7 @@ class AuthService:
             user_id=user.id,
             token=token_str,
             type=EmailTokenType.VERIFICATION,
-            expires_at=datetime.now(UTC) + timedelta(hours=24),
+            expires_at=datetime.now(UTC) + timedelta(minutes=10),
         )
         await self._email_tokens.save(email_token)
         await self._email.send_verification_email(user.email, user.full_name, token_str)

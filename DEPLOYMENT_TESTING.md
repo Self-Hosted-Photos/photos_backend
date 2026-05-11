@@ -2,11 +2,11 @@
 
 > **Canonical copy lives in `photos_infra/DEPLOYMENT_TESTING.md`.**
 > This copy is kept here so the guide is accessible when working inside the backend repo.
-> **Last synced:** 2026-04-27
+> **Last synced:** 2026-04-30
 
 ---
 
-## Current State (as of 2026-04-27)
+## Current State (as of 2026-04-30)
 
 | Item | Status |
 |---|---|
@@ -14,8 +14,9 @@
 | `photos_infra/.env` | ✅ Configured |
 | `photos_backend/.venv` | ✅ Installed (Python 3.12) |
 | Migration 0001 — users, email_tokens, refresh_tokens | ✅ Applied |
-| Migration 0002 — media, albums, album_media, shares | ❌ Not applied — **do this first** |
-| `/storage/originals`, `/storage/thumbnails` | ❌ Not created — **do this second** |
+| Migration 0002 — media, albums, album_media, shares | ✅ Applied |
+| Migration 0003 — add `deleted` value to `user_status` enum | ❌ Not applied — **do this first** |
+| `/storage/originals`, `/storage/thumbnails` | ✅ Created |
 
 ---
 
@@ -73,7 +74,7 @@ source .venv/bin/activate
 pytest --tb=short -q
 ```
 
-**Expected:** `89 passed` — if any fail, stop and fix before continuing.
+**Expected:** `95 passed` — if any fail, stop and fix before continuing.
 
 ---
 
@@ -89,23 +90,25 @@ ruff format --check .
 
 ---
 
-## Part 2 — Apply Migration 0002
+## Part 2 — Apply Migrations
 
-Migration 0001 (users/email_tokens/refresh_tokens) is already applied.
-Migration 0002 (media, albums, album_media, shares) has not been applied yet.
+Migrations 0001 and 0002 are already applied.
+Migration 0003 (adds `deleted` value to `user_status` enum) must be applied now.
 
 > Alembic must run inside the backend container — the hostname `postgres` only resolves on the Docker internal network, not from your Mac.
 
-### Step 4 — Apply migration 0002
+### Step 4 — Apply migration 0003
 
 ```bash
-docker exec photos_infra-backend-1 alembic upgrade head
+docker compose exec backend alembic upgrade head
 ```
 
 **Expected output:**
 ```
-INFO  [alembic.runtime.migration] Running upgrade 0001 -> 0002, media albums shares
+INFO  [alembic.runtime.migration] Running upgrade 0002 -> 0003, add deleted user status
 ```
+
+> PostgreSQL `ALTER TYPE ... ADD VALUE` is irreversible. The downgrade step is a documented no-op.
 
 ### Step 5 — Verify all 8 tables exist
 
@@ -696,7 +699,7 @@ SELECT id, user_id, revoked FROM refresh_tokens;
 
 ---
 
-## Quick Reference — All 24 Endpoints
+## Quick Reference — All 31 Endpoints
 
 | # | Method | Path | Auth |
 |---|---|---|---|
@@ -708,22 +711,30 @@ SELECT id, user_id, revoked FROM refresh_tokens;
 | 6 | POST | `/api/v1/auth/logout` | Cookie |
 | 7 | GET | `/api/v1/admin/users/pending` | Admin JWT |
 | 8 | POST | `/api/v1/admin/users/{id}/approve` | Admin JWT |
-| 9 | GET | `/api/v1/admin/stats` | Admin JWT |
-| 10 | POST | `/api/v1/media/upload` | User JWT |
-| 11 | GET | `/api/v1/media` | User JWT |
-| 12 | GET | `/api/v1/media/timeline` | User JWT |
-| 13 | GET | `/api/v1/media/{id}/thumbnail` | User JWT |
-| 14 | GET | `/api/v1/media/{id}/stream` | User JWT |
-| 15 | POST | `/api/v1/albums` | User JWT |
-| 16 | GET | `/api/v1/albums` | User JWT |
-| 17 | GET | `/api/v1/albums/{id}` | User JWT |
-| 18 | POST | `/api/v1/albums/{id}/media` | User JWT |
-| 19 | DELETE | `/api/v1/albums/{id}/media/{media_id}` | User JWT |
-| 20 | DELETE | `/api/v1/albums/{id}` | User JWT |
-| 21 | POST | `/api/v1/shares` | User JWT |
-| 22 | GET | `/api/v1/shares/with-me` | User JWT |
-| 23 | DELETE | `/api/v1/shares/{id}` | User JWT |
-| 24 | GET | `/api/v1/public/{token}` | None |
+| 9 | POST | `/api/v1/admin/users/{id}/suspend` | Admin JWT |
+| 10 | POST | `/api/v1/admin/users/{id}/activate` | Admin JWT |
+| 11 | DELETE | `/api/v1/admin/users/{id}` | Admin JWT |
+| 12 | GET | `/api/v1/admin/users` | Admin JWT |
+| 13 | GET | `/api/v1/admin/users/{id}` | Admin JWT |
+| 14 | PUT | `/api/v1/admin/users/{id}/quota` | Admin JWT |
+| 15 | GET | `/api/v1/admin/stats` | Admin JWT |
+| 16 | GET | `/api/v1/admin/media` | Admin JWT |
+| 17 | DELETE | `/api/v1/admin/media/{id}` | Admin JWT |
+| 18 | POST | `/api/v1/media/upload` | User JWT |
+| 19 | GET | `/api/v1/media` | User JWT |
+| 20 | GET | `/api/v1/media/timeline` | User JWT |
+| 21 | GET | `/api/v1/media/{id}/thumbnail` | User JWT |
+| 22 | GET | `/api/v1/media/{id}/stream` | User JWT |
+| 23 | POST | `/api/v1/albums` | User JWT |
+| 24 | GET | `/api/v1/albums` | User JWT |
+| 25 | GET | `/api/v1/albums/{id}` | User JWT |
+| 26 | POST | `/api/v1/albums/{id}/media` | User JWT |
+| 27 | DELETE | `/api/v1/albums/{id}/media/{media_id}` | User JWT |
+| 28 | DELETE | `/api/v1/albums/{id}` | User JWT |
+| 29 | POST | `/api/v1/shares` | User JWT |
+| 30 | GET | `/api/v1/shares/with-me` | User JWT |
+| 31 | DELETE | `/api/v1/shares/{id}` | User JWT |
+| 32 | GET | `/api/v1/public/{token}` | None |
 
 ---
 

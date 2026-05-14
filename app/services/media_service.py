@@ -12,6 +12,7 @@ from app.config import Settings
 from app.domain.events import MediaUploadedEvent
 from app.domain.models.media import Media, MediaStatus, MediaType
 from app.exceptions import AuthorizationError, InvalidStateError, ResourceNotFoundError
+from app.infrastructure.logging import security_log
 from app.infrastructure.repositories.media_repo import SQLMediaRepository
 from app.infrastructure.repositories.user_repo import SQLUserRepository
 from app.infrastructure.storage.base import StorageBackend
@@ -37,7 +38,39 @@ _MIME_TO_EXT: dict[str, str] = {
     "image/gif": "gif",
 }
 
+
+def _detect_mime_from_bytes(data: bytes) -> str | None:
+    """Detect MIME type from magic bytes. Returns None if not recognised."""
+    if len(data) < 12:
+        return None
+    h = data[:12]
+    if h[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if h[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if h[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if h[:4] == b"RIFF" and h[8:12] == b"WEBP":
+        return "image/webp"
+    # HEIC/HEIF: ftyp box — offset 4 is "ftyp", offset 8 is the brand
+    if len(data) >= 12 and data[4:8] == b"ftyp":
+        brand = data[8:12]
+        heic_brands = {b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"mif1", b"msf1"}
+        if brand in heic_brands:
+            return "image/heic"
+    return None
+
+
 _THUMBNAIL_SIZE = 320
+
+MAX_IMAGE_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 MB
+MAX_IMAGE_WIDTH = 12_000
+MAX_IMAGE_HEIGHT = 12_000
+MAX_IMAGE_PIXELS = 100_000_000  # 100 MP
+_THUMBNAIL_QUOTA_RESERVE = 5 * 1024 * 1024  # 5 MB estimate for thumbnail + overhead
+
+# Set Pillow's decompression bomb threshold at module load time
+Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
 
 @dataclass
@@ -121,14 +154,24 @@ def _parse_exif(file_bytes: bytes) -> tuple[date | None, GpsCoordinates | None]:
 
 
 def _generate_thumbnail(file_bytes: bytes, size: int = _THUMBNAIL_SIZE) -> bytes:
-    """Return a square JPEG thumbnail (centre-cropped, resized to size×size)."""
-    img = Image.open(io.BytesIO(file_bytes))
+    """Return a square JPEG thumbnail. Raises InvalidStateError for malformed/oversized images."""
+    try:
+        img = Image.open(io.BytesIO(file_bytes))
+    except Image.DecompressionBombError:
+        raise InvalidStateError("Image exceeds maximum allowed pixel count (decompression bomb)")
+    except Exception as exc:
+        raise InvalidStateError(f"Cannot open image for thumbnail generation: {exc}") from exc
+
+    w, h = img.size
+    if w > MAX_IMAGE_WIDTH or h > MAX_IMAGE_HEIGHT:
+        raise InvalidStateError(
+            f"Image dimensions {w}×{h} exceed the maximum {MAX_IMAGE_WIDTH}×{MAX_IMAGE_HEIGHT}"
+        )
 
     if img.mode != "RGB":
         img = img.convert("RGB")
 
     # Centre-crop to square
-    w, h = img.size
     min_dim = min(w, h)
     left = (w - min_dim) // 2
     top = (h - min_dim) // 2
@@ -161,40 +204,67 @@ class MediaService:
         content_type: str,
         user_id: uuid.UUID,
     ) -> Media:
-        mime = content_type.lower().split(";")[0].strip()
-
-        # 1. Validate MIME type — photos only for MVP
-        if mime not in _ALLOWED_PHOTO_MIMES:
+        # 1. File size guard (before any heavy work)
+        file_size = len(file_bytes)
+        if file_size > MAX_IMAGE_FILE_SIZE_BYTES:
+            security_log.log_upload_rejected(user_id=user_id, filename=filename, reason="file_too_large")
             raise InvalidStateError(
-                f"Unsupported file type: {mime!r}. Supported: {sorted(_ALLOWED_PHOTO_MIMES)}"
+                f"File size {file_size:,} bytes exceeds the 25 MB limit"
             )
 
-        ext = _MIME_TO_EXT[mime]
-        file_size = len(file_bytes)
+        # 2. Validate declared MIME against allowlist
+        declared_mime = content_type.lower().split(";")[0].strip()
+        if declared_mime not in _ALLOWED_PHOTO_MIMES:
+            security_log.log_upload_rejected(user_id=user_id, filename=filename, reason="invalid_declared_mime")
+            raise InvalidStateError(
+                f"Unsupported file type: {declared_mime!r}. Allowed: {sorted(_ALLOWED_PHOTO_MIMES)}"
+            )
 
-        # 2. Load user + quota check
+        # 3. Magic-byte detection — reject if actual content doesn't match an allowed type
+        detected_mime = _detect_mime_from_bytes(file_bytes)
+        if detected_mime is None or detected_mime not in _ALLOWED_PHOTO_MIMES:
+            security_log.log_upload_rejected(user_id=user_id, filename=filename, reason="mime_spoof_detected")
+            raise InvalidStateError(
+                f"File content does not match a supported image format "
+                f"(declared: {declared_mime!r}, detected: {detected_mime!r})"
+            )
+
+        # 4. Use magic-byte-detected MIME as canonical type
+        mime = detected_mime
+        ext = _MIME_TO_EXT.get(mime, "bin")
+
+        # 5. Load user + quota check (reserve original + thumbnail estimate)
         user = await self._users.get_by_id(user_id)
         if not user:
             raise ResourceNotFoundError("User not found")
-        check_quota(user, file_size)
+        check_quota(user, file_size + _THUMBNAIL_QUOTA_RESERVE)
 
-        # 3. Paths
+        # 6. Build paths
         media_id = uuid.uuid4()
         filename_stored = f"{media_id}.{ext}"
         original_path = f"originals/{user_id}/{filename_stored}"
         thumbnail_path = f"thumbnails/{user_id}/{media_id}.jpg"
 
-        # 4. Save original
-        await self._storage.save(original_path, io.BytesIO(file_bytes), mime)
+        # 7. Save original + generate thumbnail (clean up on any failure)
+        original_saved = False
+        try:
+            await self._storage.save(original_path, io.BytesIO(file_bytes), mime)
+            original_saved = True
 
-        # 5. Parse EXIF
-        captured_at, gps = _parse_exif(file_bytes)
+            # 8. Parse EXIF
+            captured_at, gps = _parse_exif(file_bytes)
 
-        # 6. Generate + save thumbnail
-        thumb_bytes = _generate_thumbnail(file_bytes)
-        await self._storage.save(thumbnail_path, io.BytesIO(thumb_bytes), "image/jpeg")
+            # 9. Generate thumbnail (raises InvalidStateError for malformed/oversized images)
+            thumb_bytes = _generate_thumbnail(file_bytes)
+            await self._storage.save(thumbnail_path, io.BytesIO(thumb_bytes), "image/jpeg")
 
-        # 7. Persist media row (status=ready — synchronous MVP flow, no Celery)
+        except Exception:
+            if original_saved:
+                with contextlib.suppress(Exception):
+                    await self._storage.delete(original_path)
+            raise
+
+        # 10. Persist media row (status=ready — synchronous MVP flow)
         media = Media(
             id=media_id,
             owner_id=user_id,
@@ -211,9 +281,10 @@ class MediaService:
             longitude=gps.longitude if gps else None,
         )
         media = await self._media.save(media)
+        security_log.log_upload_accepted(user_id=user_id, media_id=media.id, filename=filename, file_size=file_size)
 
-        # 8. Deduct from user quota
-        user.storage_used_bytes += file_size
+        # 11. Deduct actual usage from quota (original + thumbnail)
+        user.storage_used_bytes += file_size + len(thumb_bytes)
         await self._users.save(user)
 
         # Domain event (future event bus)
@@ -280,10 +351,12 @@ class MediaService:
         return [g for _, g in sorted(groups.items(), reverse=True)]
 
     async def get_media(self, media_id: uuid.UUID, user_id: uuid.UUID) -> Media:
+        from app.services.access_policy import MediaAccessPolicy
         media = await self._media.get_by_id(media_id)
         if not media:
             raise ResourceNotFoundError("Media not found")
-        if media.owner_id != user_id:
+        policy = MediaAccessPolicy(self._db)
+        if not await policy.can_view_media(user_id, media_id, media=media):
             raise AuthorizationError("Not allowed to access this media")
         return media
 

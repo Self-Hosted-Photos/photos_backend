@@ -13,6 +13,7 @@ from app.exceptions import (
     InvalidStateError,
     QuotaExceededError,
     ResourceNotFoundError,
+    TooManyRequestsError,
 )
 from app.middleware.cors import add_cors
 
@@ -27,10 +28,36 @@ if not _app_logger.handlers:
     _app_logger.addHandler(_handler)
     _app_logger.propagate = False
 
+_security_logger = logging.getLogger("pixelvault.security")
+_security_logger.setLevel(logging.INFO)
+if not _security_logger.handlers:
+    _sec_handler = logging.StreamHandler(sys.stdout)
+    _sec_handler.setLevel(logging.INFO)
+    _sec_handler.setFormatter(logging.Formatter("%(message)s"))
+    _security_logger.addHandler(_sec_handler)
+    _security_logger.propagate = False
+
+
+_DEFAULT_SECRET = "dev-secret-key-change-in-production"
+_MIN_SECRET_LEN = 32  # 256 bits minimum for HS256
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: nothing needed yet (DB connections are per-request via deps)
+    # N-01: Guard against a weak or default SECRET_KEY in production.
+    from app.config import get_settings
+    _s = get_settings()
+    if _s.app_env == "production":
+        if _s.secret_key == _DEFAULT_SECRET:
+            raise RuntimeError(
+                "SECRET_KEY is set to the default placeholder. "
+                "Generate a strong key with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+        if len(_s.secret_key) < _MIN_SECRET_LEN:
+            raise RuntimeError(
+                f"SECRET_KEY must be at least {_MIN_SECRET_LEN} characters. "
+                "Use secrets.token_hex(32) to generate a 64-char hex string."
+            )
     yield
     # Shutdown: dispose engine
     from app.database import engine
@@ -103,6 +130,13 @@ def _register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=422,
             content={"error": {"code": "INVALID_STATE", "message": str(exc)}},
+        )
+
+    @app.exception_handler(TooManyRequestsError)
+    async def too_many_requests_handler(request: Request, exc: TooManyRequestsError):
+        return JSONResponse(
+            status_code=429,
+            content={"error": {"code": "RATE_LIMITED", "message": str(exc)}},
         )
 
 

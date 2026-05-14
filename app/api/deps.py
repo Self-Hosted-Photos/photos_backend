@@ -1,3 +1,4 @@
+import uuid
 from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, status
@@ -7,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
 from app.database import get_db
+from app.domain.models.user import UserStatus
+from app.infrastructure.repositories.user_repo import SQLUserRepository
 from app.infrastructure.storage.base import StorageBackend
 from app.infrastructure.storage.local import LocalStorageBackend
 
@@ -45,13 +48,28 @@ async def get_current_user(
         )
     payload = _decode_token(credentials.credentials, settings)
 
-    user_status = payload.get("status")
-    if user_status == "pending":
+    # Live DB check — closes the 15-minute suspended-user window (N-02).
+    # The JWT payload status is stale; the DB is authoritative.
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "UNAUTHORIZED", "message": "Invalid token"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user = await SQLUserRepository(db).get_by_id(uuid.UUID(user_id))
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "UNAUTHORIZED", "message": "User not found"},
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if user.status == UserStatus.PENDING:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "ACCOUNT_PENDING", "message": "Account awaiting admin approval"},
         )
-    if user_status == "suspended":
+    if user.status in (UserStatus.SUSPENDED, UserStatus.DELETED):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "ACCOUNT_SUSPENDED", "message": "Account has been suspended"},

@@ -20,18 +20,32 @@ class LocalStorageBackend(StorageBackend):
     """
 
     def __init__(self, storage_root: str, base_url: str) -> None:
-        self._root = Path(storage_root)
+        self._root = Path(storage_root).resolve()
         self._base_url = base_url.rstrip("/")
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def _full_path(self, path: str) -> Path:
-        return self._root / path
+    def _safe_path(self, relative_path: str) -> Path:
+        """Resolve relative_path under storage root, rejecting traversal attempts."""
+        if "\x00" in relative_path:
+            raise StorageError("Invalid path: null bytes not allowed")
+        rel = Path(relative_path)
+        if rel.is_absolute():
+            raise StorageError("Absolute paths are not allowed")
+        for part in rel.parts:
+            if part == "..":
+                raise StorageError("Path traversal is not allowed")
+        resolved = (self._root / relative_path).resolve()
+        try:
+            resolved.relative_to(self._root)
+        except ValueError:
+            raise StorageError("Path escapes storage root")
+        return resolved
 
     # ── StorageBackend interface ──────────────────────────────────────────────
 
     async def save(self, path: str, data: BinaryIO, content_type: str) -> str:
-        full = self._full_path(path)
+        full = self._safe_path(path)
 
         def _write() -> None:
             full.parent.mkdir(parents=True, exist_ok=True)
@@ -47,7 +61,7 @@ class LocalStorageBackend(StorageBackend):
         return path
 
     async def read(self, path: str) -> AsyncIterator[bytes]:
-        full = self._full_path(path)
+        full = self._safe_path(path)
         if not full.exists():
             raise StorageError(f"File not found: {path}")
 
@@ -60,7 +74,7 @@ class LocalStorageBackend(StorageBackend):
             yield raw[i : i + _CHUNK_SIZE]
 
     async def delete(self, path: str) -> None:
-        full = self._full_path(path)
+        full = self._safe_path(path)
         try:
             await asyncio.to_thread(full.unlink, True)  # missing_ok=True
         except OSError as exc:
@@ -70,4 +84,4 @@ class LocalStorageBackend(StorageBackend):
         return f"{self._base_url}/storage/{path}"
 
     async def exists(self, path: str) -> bool:
-        return await asyncio.to_thread(self._full_path(path).exists)
+        return await asyncio.to_thread(self._safe_path(path).exists)

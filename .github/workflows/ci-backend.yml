@@ -64,6 +64,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt aiosqlite
 
+      # ── Dependency vulnerability scan — pip-audit (SEC-014) ─────────────────
+      # Fails the build on any known CVE in production dependencies.
+      # pip-audit checks against the PyPI Advisory Database (OSV).
+      - name: Dependency audit (pip-audit)
+        run: pip install pip-audit && pip-audit -r requirements.txt
+
       # ── Lint — ruff ─────────────────────────────────────────────────────────
       - name: Lint (ruff check)
         run: ruff check .

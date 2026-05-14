@@ -10,8 +10,12 @@ from app.domain.models.user import User, UserStatus
 from app.domain.schemas.user import AdminStats
 from app.exceptions import ResourceNotFoundError
 from app.infrastructure.email.email_service import EmailService
+from app.infrastructure.logging import security_log
 from app.infrastructure.repositories.media_repo import SQLMediaRepository
-from app.infrastructure.repositories.user_repo import SQLUserRepository
+from app.infrastructure.repositories.user_repo import (
+    RefreshTokenRepository,
+    SQLUserRepository,
+)
 
 
 class AdminService:
@@ -25,6 +29,7 @@ class AdminService:
         self._settings = settings
         self._email = email_service
         self._users = SQLUserRepository(db)
+        self._refresh_tokens = RefreshTokenRepository(db)
         self._media = SQLMediaRepository(db)
 
     async def get_pending_users(self, limit: int = 50, offset: int = 0) -> list[User]:
@@ -38,6 +43,7 @@ class AdminService:
         user.approve()  # raises InvalidStateError if not pending
         user = await self._users.save(user)
         await self._email.send_approval_notification(user.email, user.full_name)
+        security_log.log_user_approved(admin_id=admin_id, user_id=user_id)
 
         # Domain event — will be published to event bus when implemented
         _event = UserApprovedEvent(
@@ -59,16 +65,19 @@ class AdminService:
         user = await self._users.get_by_id(user_id)
         if not user:
             raise ResourceNotFoundError(f"User {user_id} not found")
-
         user.suspend()  # raises InvalidStateError if role is admin
         user = await self._users.save(user)
+        await self._refresh_tokens.revoke_all_for_user(user_id)
+        security_log.log_user_suspended(admin_id=None, user_id=user_id)
         return user
 
     async def delete_user(self, user_id: uuid.UUID) -> None:
         user = await self._users.get_by_id(user_id)
         if not user:
             raise ResourceNotFoundError(f"User {user_id} not found")
+        await self._refresh_tokens.revoke_all_for_user(user_id)
         user.soft_delete()
+        security_log.log_user_deleted(admin_id=None, user_id=user_id)
         await self._users.save(user)
 
     async def get_all_users(

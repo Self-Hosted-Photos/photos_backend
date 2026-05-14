@@ -78,6 +78,8 @@ class User(Base):
 
         if self.status != UserStatus.PENDING:
             raise InvalidStateError("Only pending users can be approved")
+        if not self.email_verified:
+            raise InvalidStateError("Cannot approve user with unverified email address")
         self.status = UserStatus.ACTIVE
 
     def activate(self) -> None:
@@ -120,7 +122,7 @@ class EmailToken(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
-    token: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    token_hash: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     type: Mapped[EmailTokenType] = mapped_column(
         Enum(
             EmailTokenType, name="email_token_type", values_callable=lambda e: [x.value for x in e]
@@ -132,7 +134,7 @@ class EmailToken(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="email_tokens")
 
-    __table_args__ = (Index("idx_email_tokens_token", "token", unique=True),)
+    __table_args__ = (Index("idx_email_tokens_token_hash", "token_hash", unique=True),)
 
 
 class RefreshToken(Base):

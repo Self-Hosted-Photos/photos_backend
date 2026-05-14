@@ -44,6 +44,10 @@ class AccountNotActiveError(ApplicationError):
     """Account exists but is not in active state (pending or suspended)."""
 
 
+class TooManyRequestsError(ApplicationError):
+    """Rate limit exceeded for this operation."""
+
+
 # ─── Infrastructure errors ────────────────────────────────────────────────────
 
 

@@ -155,7 +155,9 @@ async def resend_verification(
 @router.post("/refresh", response_model=RefreshResponse)
 async def refresh(
     request: Request,
+    response: Response,
     auth: Annotated[AuthService, Depends(_get_auth_service)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ):
     refresh_token_raw = request.cookies.get(REFRESH_COOKIE)
     if not refresh_token_raw:
@@ -164,12 +166,18 @@ async def refresh(
             detail={"code": "UNAUTHORIZED", "message": "Refresh token missing"},
         )
     try:
-        access_token = await auth.refresh_access_token(refresh_token_raw)
+        access_token, new_refresh_raw = await auth.refresh_access_token(refresh_token_raw)
     except (InvalidCredentialsError, AccountNotActiveError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "UNAUTHORIZED", "message": str(exc)},
         ) from exc
+    _set_refresh_cookie(
+        response,
+        new_refresh_raw,
+        settings.refresh_token_expire_days,
+        secure=settings.app_env != "development",
+    )
     return RefreshResponse(access_token=access_token)
 
 

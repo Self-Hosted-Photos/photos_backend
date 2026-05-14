@@ -21,6 +21,7 @@ from app.exceptions import (
     ResourceNotFoundError,
 )
 from app.infrastructure.email.email_service import EmailService
+from app.infrastructure.logging import security_log
 from app.infrastructure.repositories.user_repo import (
     EmailTokenRepository,
     RefreshTokenRepository,
@@ -80,7 +81,7 @@ class AuthService:
         email_token = EmailToken(
             id=uuid.uuid4(),
             user_id=user.id,
-            token=token_str,
+            token_hash=_hash_token(token_str),
             type=EmailTokenType.VERIFICATION,
             expires_at=datetime.now(UTC) + timedelta(minutes=10),
         )
@@ -92,7 +93,7 @@ class AuthService:
     # ── Verify email ──────────────────────────────────────────────────────────
 
     async def verify_email(self, token: str) -> User:
-        email_token = await self._email_tokens.get_by_token(token)
+        email_token = await self._email_tokens.get_by_token_hash(_hash_token(token))
         if not email_token:
             raise ResourceNotFoundError("Verification token is invalid or expired")
         if email_token.used:
@@ -125,7 +126,7 @@ class AuthService:
         email_token = EmailToken(
             id=uuid.uuid4(),
             user_id=user.id,
-            token=token_str,
+            token_hash=_hash_token(token_str),
             type=EmailTokenType.VERIFICATION,
             expires_at=datetime.now(UTC) + timedelta(hours=24),
         )
@@ -143,8 +144,10 @@ class AuthService:
         """Returns (access_token, refresh_token_raw)."""
         user = await self._users.get_by_email(data.email.lower().strip())
         if not user or not user.password_hash:
+            security_log.log_login_failure(email=data.email.lower().strip(), reason="invalid_credentials", ip_address=ip_address)
             raise InvalidCredentialsError("Invalid email or password")
         if not _verify_password(data.password, user.password_hash):
+            security_log.log_login_failure(email=data.email.lower().strip(), reason="invalid_password", ip_address=ip_address)
             raise InvalidCredentialsError("Invalid email or password")
 
         if user.status == UserStatus.PENDING:
@@ -165,23 +168,50 @@ class AuthService:
         )
         await self._refresh_tokens.save(rt)
 
+        security_log.log_login_success(user_id=user.id, email=user.email, ip_address=ip_address)
         return access_token, refresh_token_raw
 
     # ── Refresh ───────────────────────────────────────────────────────────────
 
-    async def refresh_access_token(self, refresh_token_raw: str) -> str:
+    async def refresh_access_token(self, refresh_token_raw: str) -> tuple[str, str]:
+        """Returns (access_token, new_refresh_token_raw). Rotates the refresh token."""
         token_hash = _hash_token(refresh_token_raw)
+
+        # Reuse detection: if the token exists but is revoked, a stolen token is being replayed
+        any_rt = await self._refresh_tokens.get_by_hash_any(token_hash)
+        if any_rt is not None and any_rt.revoked:
+            await self._refresh_tokens.revoke_all_for_user(any_rt.user_id)
+            security_log.log_token_reuse_detected(user_id=any_rt.user_id)
+            raise InvalidCredentialsError("Refresh token reuse detected — all sessions revoked")
+
         rt = await self._refresh_tokens.get_by_hash(token_hash)
         if not rt:
+            security_log.log_refresh_failure(reason="invalid_token")
             raise InvalidCredentialsError("Invalid or revoked refresh token")
         if _as_utc(rt.expires_at) < datetime.now(UTC):
+            security_log.log_refresh_failure(reason="token_expired")
             raise InvalidCredentialsError("Refresh token has expired")
 
         user = await self._users.get_by_id(rt.user_id)
         if not user or user.status != UserStatus.ACTIVE:
             raise AccountNotActiveError("Account is not active")
 
-        return self._issue_access_token(user)
+        # Rotate: mark old token revoked, issue a new one
+        rt.revoked = True
+        await self._db.flush()
+
+        new_raw, new_hash = self._generate_refresh_token()
+        new_rt = RefreshToken(
+            id=uuid.uuid4(),
+            user_id=user.id,
+            token_hash=new_hash,
+            expires_at=datetime.now(UTC) + timedelta(days=self._settings.refresh_token_expire_days),
+            user_agent=rt.user_agent,
+            ip_address=rt.ip_address,
+        )
+        await self._refresh_tokens.save(new_rt)
+
+        return self._issue_access_token(user), new_raw
 
     # ── Logout ────────────────────────────────────────────────────────────────
 
@@ -200,7 +230,7 @@ class AuthService:
         email_token = EmailToken(
             id=uuid.uuid4(),
             user_id=user.id,
-            token=token_str,
+            token_hash=_hash_token(token_str),
             type=EmailTokenType.PASSWORD_RESET,
             expires_at=datetime.now(UTC) + timedelta(hours=1),
         )
@@ -208,7 +238,7 @@ class AuthService:
         await self._email.send_password_reset_email(user.email, user.full_name, token_str)
 
     async def reset_password(self, token: str, new_password: str) -> None:
-        email_token = await self._email_tokens.get_by_token(token)
+        email_token = await self._email_tokens.get_by_token_hash(_hash_token(token))
         if not email_token:
             raise ResourceNotFoundError("Password reset token is invalid or expired")
         if email_token.used:

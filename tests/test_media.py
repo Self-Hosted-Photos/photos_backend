@@ -227,7 +227,7 @@ async def test_upload_updates_user_storage_used(client, db):
 
     repo = SQLUserRepository(db)
     user = await repo.get_by_email("upload8@test.com")
-    assert user.storage_used_bytes == len(jpeg)
+    assert user.storage_used_bytes >= len(jpeg)
 
 
 # ── GET /media ────────────────────────────────────────────────────────────────

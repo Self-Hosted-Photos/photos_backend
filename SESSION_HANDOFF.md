@@ -12,30 +12,53 @@
 
 > Overwritten each session. Do not manually edit.
 
-**Last Updated:** 2026-04-30  
-**Sprint:** Sprint 2 — ALL TASKS COMPLETE ✅ — FULLY E2E TESTED ✅  
-**Tests:** 95/95 passing
+**Last Updated:** 2026-05-14  
+**Sprint:** Security Hardening — ALL BACKEND SEC + N-CATEGORY TASKS COMPLETE ✅  
+**Tests:** 115/115 passing (was 108 before N-category fixes)
 
 ---
 
 ### ⏭️ Resume Here
 
-**`photos_backend` is complete for MVP.** No remaining sprint tasks.
+**`photos_backend` security hardening is complete.** 115/115 tests passing.
 
-**Applied this session (2026-04-30):**
-- State machine: `activate` (pending/suspended → active) and `soft_delete` (suspended → deleted) domain methods on `User`
-- `POST /admin/users/{id}/activate` and `DELETE /admin/users/{id}` routes (204)
-- Migration `0003_add_deleted_user_status.py` — `ALTER TYPE user_status ADD VALUE 'deleted'`
-- `get_all_users()` always excludes `DELETED` users from admin list views
-- 6 new tests in `test_admin.py` — 95/95 total
-- Fixed `.gitignore` (`/storage/` anchored) — resolved CI `ModuleNotFoundError`
-- CI job renamed to `backend-ci` for predictable branch protection check name
-- All lint/format/type-check clean
+**Applied this session (2026-05-14) — N-Category Fixes (from Pixel_Vault_Security_Pitfalls_Report_New.md):**
 
-Next work is in other repos:
-- `photos_infra` — S2-001 through S2-006 are all unblocked
-- `photos_frontend` — S2-001 through S2-005 unblocked
-- **Pending:** Apply migration 0003 locally: `docker compose exec backend alembic upgrade head`
+- **N-01** (`main.py`) — Startup validation: rejects default `SECRET_KEY` and keys shorter than 32 chars in production
+- **N-02** (`api/deps.py`) — `get_current_user` now does live DB lookup per request; suspended user's access token rejected immediately (closes 15-minute staleness window)
+- **N-06** (`docker-compose.yml`, `.env.example`) — Redis `requirepass` wired via `$REDIS_PASSWORD`; backend `REDIS_URL` embeds password
+- **N-08** (`domain/models/user.py`, `user_repo.py`, `auth_service.py`, `migrations/0005_hash_email_tokens.py`) — `EmailToken.token` renamed to `token_hash`; all create/lookup sites now use `_hash_token()` SHA-256; Alembic migration 0005 created
+- **N-12** (`services/sharing_service.py`) — `create_share()` rejects non-ACTIVE target users with `InvalidStateError`
+- **N-13** (`domain/models/user.py`) — `approve()` enforces `email_verified=True`; raises `InvalidStateError("unverified email")` otherwise
+- **Tests** (`tests/test_security.py`, `tests/test_admin.py`) — 7 new security tests; `test_approve_pending_user_returns_active` updated to set `email_verified=True`
+
+**Applied previous session (2026-05-13) — Security Hardening:**
+
+All SEC-001 through SEC-017 backend tasks are done per `Pixel Vault Security Pitfalls Report` and `Pixel Vault Security Remediation Plan` (both dated 2026-05-13).
+
+- **SEC-001** — Created `app/services/access_policy.py`: `MediaAccessPolicy` with `can_view_media / can_delete_media / can_view_album / can_modify_album`. `media_service.get_media()` now checks owner OR direct user share.
+- **SEC-002** — `LocalStorageBackend._safe_path()`: rejects null bytes, absolute paths, `..` traversal, root escape via `.relative_to()`
+- **SEC-003** — `_detect_mime_from_bytes()` pure magic-byte detection (JPEG/PNG/GIF/WebP/HEIC). Canonical MIME taken from bytes, not declared header. MIME spoof rejected.
+- **SEC-004** — `Image.MAX_IMAGE_PIXELS = 100_000_000`, dimension guard (12000×12000), `DecompressionBombError` caught in `_generate_thumbnail()`
+- **SEC-006** — Quota now reserves `original + 5MB thumbnail estimate` before upload; deducts `original + actual_thumbnail` after success; original cleaned up on failure
+- **SEC-007** — CORS restricted to explicit methods/headers; refresh token rotation (old revoked, new issued on every `/auth/refresh`); reuse detection → revoke all sessions for user
+- **SEC-010** — `app/infrastructure/logging/security_log.py`: JSON security event logger (`pixelvault.security`) covering auth/media/admin/share events. Integrated into all 4 services.
+- **SEC-011** — `app/infrastructure/rate_limiter.py`: `AbstractRateLimiter` / `NoOpRateLimiter` / `InMemoryRateLimiter` / `get_rate_limiter()` FastAPI dep. Redis wiring ready.
+- **SEC-012** — Public share links default to 7-day expiry; 30-day max enforced at creation time
+- **SEC-015** — `tests/test_security.py`: 13 security regression tests (all passing)
+- **SEC-016** — `revoke_all_for_user()` called in `suspend_user()` and `delete_user()`
+- **SEC-017** — `AuditLog` model + `AuditLogRepository` + Alembic migration `0004_add_audit_logs`
+- **SEC-005/008/009/013/014/018** — N/A for backend (FFmpeg not in MVP; Cloudflare/Nginx/CI handled in infra)
+
+**Before applying migration 0004 locally:**
+```bash
+docker compose exec backend alembic upgrade head
+```
+
+**Next security work:**
+- `photos_frontend` — SEC tasks for frontend (XSS, CSP, token handling, etc.)
+- `photos_infra` — SEC-008 (Cloudflare Zero Trust admin), SEC-009 (backup restore), SEC-013 (Nginx secure headers)
+- `photos_admin_ui` — SEC tasks for admin panel
 
 ---
 
@@ -181,38 +204,49 @@ app/
       share.py          ✅
     events.py           ✅
   services/
-    auth_service.py     ✅
-    admin_service.py    ✅
-    media_service.py    ✅
+    auth_service.py     ✅ (SEC-007: refresh rotation + reuse detection; SEC-010: security logging)
+    admin_service.py    ✅ (SEC-016: revoke_all_for_user on suspend/delete; SEC-010: logging)
+    media_service.py    ✅ (SEC-003: magic bytes; SEC-004: bomb protection; SEC-006: quota fix; SEC-001: policy)
     album_service.py    ✅
-    sharing_service.py  ✅
+    sharing_service.py  ✅ (SEC-012: public share default expiry; SEC-010: logging)
+    access_policy.py    ✅ NEW — SEC-001: MediaAccessPolicy (owner + shared-with access)
   infrastructure/
     repositories/
-      user_repo.py      ✅
+      user_repo.py      ✅ (SEC-007/016: get_by_hash_any, revoke_all_for_user added)
       media_repo.py     ✅
       album_repo.py     ✅
       share_repo.py     ✅
+      audit_repo.py     ✅ NEW — SEC-017: AuditLogRepository
     storage/
       base.py           ✅ StorageBackend ABC
-      local.py          ✅ LocalStorageBackend
+      local.py          ✅ SEC-002: _safe_path() path traversal protection
     email/
       email_service.py  ✅ stdout stub
+    logging/
+      __init__.py       ✅ NEW — package init
+      security_log.py   ✅ NEW — SEC-010: structured JSON security event logger
+  domain/
+    models/
+      audit.py          ✅ NEW — SEC-017: AuditLog model + AuditEventType enum
   middleware/
-    cors.py             ✅
+    cors.py             ✅ SEC-007: restricted allow_methods + allow_headers
     quota.py            ✅
+  rate_limiter.py       ✅ NEW — SEC-011: AbstractRateLimiter / NoOpRateLimiter / InMemoryRateLimiter
 migrations/
   env.py                ✅ async Alembic config
   versions/
     0001_initial_users.py              ✅
     0002_media_albums_shares.py        ✅
-    0003_add_deleted_user_status.py    ✅ (ALTER TYPE user_status ADD VALUE 'deleted')
+    0003_add_deleted_user_status.py    ✅
+    0004_add_audit_logs.py             ✅ NEW — SEC-017: audit_logs table
 tests/
   conftest.py                          ✅ SQLite in-memory, client + storage fixtures
   test_auth.py                         ✅ 9 tests
   test_admin.py                        ✅ 15 tests
-  test_media.py                        ✅ 18 tests
+  test_media.py                        ✅ 18 tests (test_upload_updates_user_storage_used updated for SEC-006)
   test_albums.py                       ✅ 22 tests
   test_shares.py                       ✅ 20 tests
+  test_security.py                     ✅ NEW — SEC-015: 13 security regression tests
   infrastructure/
     test_local_storage.py              ✅ 12 tests
 ```
@@ -230,3 +264,5 @@ tests/
 | 5 | 2026-04-27 | Full E2E testing (37 steps via Postman). Fixed [EMAIL STUB] logging by adding explicit StreamHandler to app logger in main.py. Confirmed: auth flow, admin routes, media upload+EXIF+thumbnail, HTTP Range 206, album CRUD, share + public link all working. Wiped test data after session. | main.py, DEPLOYMENT_TESTING.md | photos_infra S2-001–S2-004 + photos_frontend S1-001 + photos_admin_ui S1-001 |
 | 6 | 2026-04-28 | No backend changes. Session focused on photos_frontend Sprint 1 (all 6 tasks complete). Backend remains 89/89 tests passing and ready for frontend integration. | — | No further backend work needed for MVP |
 | 7 | 2026-04-30 | User state machine: activate (pending/suspended→active) + soft delete (suspended→deleted). New routes POST /activate + DELETE /{id} (204). Migration 0003 (ALTER TYPE user_status ADD VALUE 'deleted'). get_all_users() excludes deleted. 6 new tests → 95/95. Fixed .gitignore /storage/ anchor (CI ModuleNotFoundError). Renamed CI job to backend-ci. All ruff lint+format+type-check clean. | user.py (DELETED enum + activate/soft_delete), admin_service.py, admin.py, user_repo.py, 0003_add_deleted_user_status.py, test_admin.py, .gitignore, ci-backend.yml, ruff.toml | Apply migration 0003 locally: docker compose exec backend alembic upgrade head |
+| 8 | 2026-05-13 | Security hardening complete — all backend SEC tasks done before first deployment. SEC-001: MediaAccessPolicy (IDOR prevention). SEC-002: _safe_path() path traversal. SEC-003: magic-byte MIME detection. SEC-004: decompression bomb protection. SEC-006: quota pre-reserve + actual deduct. SEC-007: CORS hardening + refresh token rotation + reuse-detection (revoke all sessions). SEC-010: structured JSON security logger (pixelvault.security). SEC-011: AbstractRateLimiter / InMemoryRateLimiter / NoOpRateLimiter. SEC-012: public share 7-day default + 30-day max. SEC-015: 13 security regression tests. SEC-016: revoke_all_for_user on suspend + delete. SEC-017: AuditLog model + AuditLogRepository + migration 0004. Tests: 95→108/108 passing. | app/services/access_policy.py (NEW), app/infrastructure/storage/local.py, app/services/media_service.py, app/exceptions.py, app/middleware/cors.py, app/main.py, app/infrastructure/repositories/user_repo.py, app/services/auth_service.py, app/api/v1/auth.py, app/services/admin_service.py, app/services/sharing_service.py, app/infrastructure/logging/security_log.py (NEW), app/infrastructure/logging/__init__.py (NEW), app/infrastructure/rate_limiter.py (NEW), app/domain/models/audit.py (NEW), app/infrastructure/repositories/audit_repo.py (NEW), migrations/versions/0004_add_audit_logs.py (NEW), tests/test_security.py (NEW), tests/test_media.py | Apply migration 0004 before first deploy. Next: photos_frontend SEC tasks (XSS, CSP, token handling) |
+| 9 | 2026-05-14 | N-category fixes from expanded security report. N-01: startup secret key validation. N-02: live DB check in get_current_user (closes 15-min suspended-user window). N-06: Redis requirepass. N-08: EmailToken column token→token_hash + migration 0005. N-12: create_share rejects non-ACTIVE targets. N-13: approve() enforces email_verified. 7 new tests (20 security tests total). test_admin.py updated for N-13. Tests: 108→115/115 passing. | app/main.py, app/api/deps.py, photos_infra/docker-compose.yml, photos_infra/.env.example, app/domain/models/user.py, app/infrastructure/repositories/user_repo.py, app/services/auth_service.py, migrations/versions/0005_hash_email_tokens.py (NEW), app/services/sharing_service.py, tests/test_security.py, tests/test_admin.py | Apply migration 0005 before deploy. Deploy when ready. |

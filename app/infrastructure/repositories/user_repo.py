@@ -1,7 +1,7 @@
 import uuid
 from abc import ABC, abstractmethod
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.models.user import EmailToken, RefreshToken, User, UserStatus
@@ -99,8 +99,10 @@ class EmailTokenRepository:
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
 
-    async def get_by_token(self, token: str) -> EmailToken | None:
-        result = await self._db.execute(select(EmailToken).where(EmailToken.token == token))
+    async def get_by_token_hash(self, token_hash: str) -> EmailToken | None:
+        result = await self._db.execute(
+            select(EmailToken).where(EmailToken.token_hash == token_hash)
+        )
         return result.scalar_one_or_none()
 
     async def save(self, token: EmailToken) -> EmailToken:
@@ -140,3 +142,19 @@ class RefreshTokenRepository:
         if token:
             await self._db.delete(token)
             await self._db.flush()
+
+    async def get_by_hash_any(self, token_hash: str) -> RefreshToken | None:
+        """Get token by hash regardless of revoked status (for reuse detection)."""
+        result = await self._db.execute(
+            select(RefreshToken).where(RefreshToken.token_hash == token_hash)
+        )
+        return result.scalar_one_or_none()
+
+    async def revoke_all_for_user(self, user_id: uuid.UUID) -> None:
+        """Revoke all active refresh tokens for a user (on suspend, delete, or reuse detection)."""
+        await self._db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.user_id == user_id, RefreshToken.revoked.is_(False))
+            .values(revoked=True)
+        )
+        await self._db.flush()

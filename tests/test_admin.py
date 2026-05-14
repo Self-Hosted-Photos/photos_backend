@@ -107,6 +107,8 @@ async def test_approve_pending_user_returns_active(client, db):
 
     repo = SQLUserRepository(db)
     user = await repo.get_by_email("approve_me@test.com")
+    user.email_verified = True  # N-13: approval requires verified email
+    await db.flush()
 
     r = await client.post(
         f"/api/v1/admin/users/{user.id}/approve",

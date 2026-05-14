@@ -1,9 +1,9 @@
 import uuid
 from typing import Annotated, Any
 
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings

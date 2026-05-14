@@ -1,7 +1,6 @@
 import time
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from typing import Any
 
 from app.exceptions import TooManyRequestsError
 

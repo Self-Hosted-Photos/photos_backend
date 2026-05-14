@@ -394,8 +394,6 @@ async def test_email_token_stored_as_hash_not_plaintext(db, client):
 @pytest.mark.asyncio
 async def test_verify_email_with_raw_token_flow(client, db):
     """Full flow: register → intercept raw token from DB → verify succeeds."""
-    from app.services.auth_service import _hash_token  # local import to avoid circular
-
     email = "sec_n08_verify@test.com"
     await client.post(
         "/api/v1/auth/register",

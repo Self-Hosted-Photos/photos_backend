@@ -39,7 +39,7 @@ class LocalStorageBackend(StorageBackend):
         try:
             resolved.relative_to(self._root)
         except ValueError:
-            raise StorageError("Path escapes storage root")
+            raise StorageError("Path escapes storage root") from None
         return resolved
 
     # ── StorageBackend interface ──────────────────────────────────────────────

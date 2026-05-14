@@ -158,7 +158,7 @@ def _generate_thumbnail(file_bytes: bytes, size: int = _THUMBNAIL_SIZE) -> bytes
     try:
         img = Image.open(io.BytesIO(file_bytes))
     except Image.DecompressionBombError:
-        raise InvalidStateError("Image exceeds maximum allowed pixel count (decompression bomb)")
+        raise InvalidStateError("Image exceeds maximum allowed pixel count (decompression bomb)") from None
     except Exception as exc:
         raise InvalidStateError(f"Cannot open image for thumbnail generation: {exc}") from exc
 

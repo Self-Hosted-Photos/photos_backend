@@ -36,10 +36,9 @@ class InMemoryRateLimiter(AbstractRateLimiter):
         self._windows[key] = [t for t in hits if t > cutoff]
         if len(self._windows[key]) >= limit:
             from app.infrastructure.logging.security_log import log_rate_limit_triggered
+
             log_rate_limit_triggered(limit_name=action)
-            raise TooManyRequestsError(
-                f"Too many {action} requests. Try again later."
-            )
+            raise TooManyRequestsError(f"Too many {action} requests. Try again later.")
         self._windows[key].append(now)
 
 

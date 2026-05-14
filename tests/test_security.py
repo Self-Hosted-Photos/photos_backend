@@ -36,9 +36,7 @@ def _make_jpeg(width: int = 100, height: int = 100) -> bytes:
     return buf.getvalue()
 
 
-async def _create_active_user(
-    client, db, email: str, password: str = "pass1234"
-) -> str:
+async def _create_active_user(client, db, email: str, password: str = "pass1234") -> str:
     """Register user, activate, and return access token."""
     await client.post(
         "/api/v1/auth/register",
@@ -49,9 +47,7 @@ async def _create_active_user(
     user.status = UserStatus.ACTIVE
     user.email_verified = True
     await db.flush()
-    r = await client.post(
-        "/api/v1/auth/login", json={"email": email, "password": password}
-    )
+    r = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
     return r.json()["access_token"]
 
 
@@ -250,9 +246,7 @@ async def test_suspended_user_refresh_returns_401(client, db):
     await db.flush()
 
     # 2. Login — this sets the refresh_token cookie on the client
-    login_r = await client.post(
-        "/api/v1/auth/login", json={"email": email, "password": password}
-    )
+    login_r = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert login_r.status_code == 200
     assert "refresh_token" in login_r.cookies
 
@@ -377,18 +371,16 @@ async def test_email_token_stored_as_hash_not_plaintext(db, client):
     assert r.status_code == 201
 
     result = await db.execute(
-        select(EmailToken)
-        .join(User, User.id == EmailToken.user_id)
-        .where(User.email == email)
+        select(EmailToken).join(User, User.id == EmailToken.user_id).where(User.email == email)
     )
     token_row = result.scalar_one_or_none()
     assert token_row is not None, "No EmailToken row created on registration"
 
     # SHA-256 hex digest is always exactly 64 lowercase hex characters
     assert len(token_row.token_hash) == 64
-    assert all(c in "0123456789abcdef" for c in token_row.token_hash), (
-        f"token_hash is not a hex string: {token_row.token_hash!r}"
-    )
+    assert all(
+        c in "0123456789abcdef" for c in token_row.token_hash
+    ), f"token_hash is not a hex string: {token_row.token_hash!r}"
 
 
 @pytest.mark.asyncio
@@ -405,14 +397,13 @@ async def test_verify_email_with_raw_token_flow(client, db):
 
     # In production the raw token is only in the email link; here we cannot reconstruct
     # it. Instead, verify that looking up by a wrong value returns None (hash mismatch).
-    result = await db.execute(
-        select(EmailToken).where(EmailToken.user_id == user.id)
-    )
+    result = await db.execute(select(EmailToken).where(EmailToken.user_id == user.id))
     token_row = result.scalar_one_or_none()
     assert token_row is not None
 
     # A plaintext lookup (wrong value) must not match the stored hash
     from app.infrastructure.repositories.user_repo import EmailTokenRepository
+
     et_repo = EmailTokenRepository(db)
     not_found = await et_repo.get_by_token_hash("not-the-real-token")
     assert not_found is None
@@ -434,7 +425,11 @@ async def test_share_with_pending_user_rejected(client, db):
     # Register target user but leave them PENDING (default after register)
     await client.post(
         "/api/v1/auth/register",
-        json={"email": "sec_n12_pending@test.com", "full_name": "Pending Target", "password": "pass1234"},
+        json={
+            "email": "sec_n12_pending@test.com",
+            "full_name": "Pending Target",
+            "password": "pass1234",
+        },
     )
     target = await SQLUserRepository(db).get_by_email("sec_n12_pending@test.com")
     assert target.status == UserStatus.PENDING
@@ -470,7 +465,11 @@ async def test_share_with_suspended_user_rejected(client, db):
     # Create and suspend the target user
     await client.post(
         "/api/v1/auth/register",
-        json={"email": "sec_n12_suspended@test.com", "full_name": "Suspended Target", "password": "pass1234"},
+        json={
+            "email": "sec_n12_suspended@test.com",
+            "full_name": "Suspended Target",
+            "password": "pass1234",
+        },
     )
     repo = SQLUserRepository(db)
     target = await repo.get_by_email("sec_n12_suspended@test.com")

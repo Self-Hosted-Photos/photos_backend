@@ -46,12 +46,13 @@ _MIN_SECRET_LEN = 32  # 256 bits minimum for HS256
 async def lifespan(app: FastAPI):
     # N-01: Guard against a weak or default SECRET_KEY in production.
     from app.config import get_settings
+
     _s = get_settings()
     if _s.app_env == "production":
         if _s.secret_key == _DEFAULT_SECRET:
             raise RuntimeError(
                 "SECRET_KEY is set to the default placeholder. "
-                "Generate a strong key with: python -c \"import secrets; print(secrets.token_hex(32))\""
+                'Generate a strong key with: python -c "import secrets; print(secrets.token_hex(32))"'
             )
         if len(_s.secret_key) < _MIN_SECRET_LEN:
             raise RuntimeError(

@@ -32,10 +32,7 @@ class MediaAccessPolicy:
             return True
         # Check direct user shares
         shares = await self._shares.get_by_shared_with(user_id)
-        return any(
-            s.target_media_id == media_id and s.is_valid()
-            for s in shares
-        )
+        return any(s.target_media_id == media_id and s.is_valid() for s in shares)
 
     async def can_delete_media(
         self,
@@ -64,10 +61,7 @@ class MediaAccessPolicy:
         if album.owner_id == user_id:
             return True
         shares = await self._shares.get_by_shared_with(user_id)
-        return any(
-            s.target_album_id == album_id and s.is_valid()
-            for s in shares
-        )
+        return any(s.target_album_id == album_id and s.is_valid() for s in shares)
 
     async def can_modify_album(
         self,

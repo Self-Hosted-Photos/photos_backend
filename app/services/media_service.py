@@ -158,7 +158,9 @@ def _generate_thumbnail(file_bytes: bytes, size: int = _THUMBNAIL_SIZE) -> bytes
     try:
         img = Image.open(io.BytesIO(file_bytes))
     except Image.DecompressionBombError:
-        raise InvalidStateError("Image exceeds maximum allowed pixel count (decompression bomb)") from None
+        raise InvalidStateError(
+            "Image exceeds maximum allowed pixel count (decompression bomb)"
+        ) from None
     except Exception as exc:
         raise InvalidStateError(f"Cannot open image for thumbnail generation: {exc}") from exc
 
@@ -207,15 +209,17 @@ class MediaService:
         # 1. File size guard (before any heavy work)
         file_size = len(file_bytes)
         if file_size > MAX_IMAGE_FILE_SIZE_BYTES:
-            security_log.log_upload_rejected(user_id=user_id, filename=filename, reason="file_too_large")
-            raise InvalidStateError(
-                f"File size {file_size:,} bytes exceeds the 25 MB limit"
+            security_log.log_upload_rejected(
+                user_id=user_id, filename=filename, reason="file_too_large"
             )
+            raise InvalidStateError(f"File size {file_size:,} bytes exceeds the 25 MB limit")
 
         # 2. Validate declared MIME against allowlist
         declared_mime = content_type.lower().split(";")[0].strip()
         if declared_mime not in _ALLOWED_PHOTO_MIMES:
-            security_log.log_upload_rejected(user_id=user_id, filename=filename, reason="invalid_declared_mime")
+            security_log.log_upload_rejected(
+                user_id=user_id, filename=filename, reason="invalid_declared_mime"
+            )
             raise InvalidStateError(
                 f"Unsupported file type: {declared_mime!r}. Allowed: {sorted(_ALLOWED_PHOTO_MIMES)}"
             )
@@ -223,7 +227,9 @@ class MediaService:
         # 3. Magic-byte detection — reject if actual content doesn't match an allowed type
         detected_mime = _detect_mime_from_bytes(file_bytes)
         if detected_mime is None or detected_mime not in _ALLOWED_PHOTO_MIMES:
-            security_log.log_upload_rejected(user_id=user_id, filename=filename, reason="mime_spoof_detected")
+            security_log.log_upload_rejected(
+                user_id=user_id, filename=filename, reason="mime_spoof_detected"
+            )
             raise InvalidStateError(
                 f"File content does not match a supported image format "
                 f"(declared: {declared_mime!r}, detected: {detected_mime!r})"
@@ -281,7 +287,9 @@ class MediaService:
             longitude=gps.longitude if gps else None,
         )
         media = await self._media.save(media)
-        security_log.log_upload_accepted(user_id=user_id, media_id=media.id, filename=filename, file_size=file_size)
+        security_log.log_upload_accepted(
+            user_id=user_id, media_id=media.id, filename=filename, file_size=file_size
+        )
 
         # 11. Deduct actual usage from quota (original + thumbnail)
         user.storage_used_bytes += file_size + len(thumb_bytes)
@@ -352,6 +360,7 @@ class MediaService:
 
     async def get_media(self, media_id: uuid.UUID, user_id: uuid.UUID) -> Media:
         from app.services.access_policy import MediaAccessPolicy
+
         media = await self._media.get_by_id(media_id)
         if not media:
             raise ResourceNotFoundError("Media not found")

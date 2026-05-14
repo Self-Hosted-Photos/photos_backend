@@ -104,7 +104,9 @@ def log_user_deleted(admin_id: uuid.UUID | None, user_id: uuid.UUID) -> None:
 
 
 def log_quota_changed(admin_id: uuid.UUID, user_id: uuid.UUID, new_quota_bytes: int) -> None:
-    _emit("admin.quota.changed", admin_id=admin_id, user_id=user_id, new_quota_bytes=new_quota_bytes)
+    _emit(
+        "admin.quota.changed", admin_id=admin_id, user_id=user_id, new_quota_bytes=new_quota_bytes
+    )
 
 
 # ── Rate limit events ─────────────────────────────────────────────────────────

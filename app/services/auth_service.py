@@ -144,10 +144,16 @@ class AuthService:
         """Returns (access_token, refresh_token_raw)."""
         user = await self._users.get_by_email(data.email.lower().strip())
         if not user or not user.password_hash:
-            security_log.log_login_failure(email=data.email.lower().strip(), reason="invalid_credentials", ip_address=ip_address)
+            security_log.log_login_failure(
+                email=data.email.lower().strip(),
+                reason="invalid_credentials",
+                ip_address=ip_address,
+            )
             raise InvalidCredentialsError("Invalid email or password")
         if not _verify_password(data.password, user.password_hash):
-            security_log.log_login_failure(email=data.email.lower().strip(), reason="invalid_password", ip_address=ip_address)
+            security_log.log_login_failure(
+                email=data.email.lower().strip(), reason="invalid_password", ip_address=ip_address
+            )
             raise InvalidCredentialsError("Invalid email or password")
 
         if user.status == UserStatus.PENDING:

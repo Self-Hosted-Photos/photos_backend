@@ -1,4 +1,6 @@
 import logging
+import logging.handlers
+import os
 import sys
 from contextlib import asynccontextmanager
 
@@ -15,31 +17,73 @@ from app.exceptions import (
     ResourceNotFoundError,
     TooManyRequestsError,
 )
+from app.infrastructure.logging.json_formatter import JsonFormatter
 from app.middleware.cors import add_cors
 
-# Attach an explicit stdout handler so all app.* loggers are visible in docker
-# logs regardless of uvicorn's logging configuration.
-_app_logger = logging.getLogger("app")
-_app_logger.setLevel(logging.INFO)
-if not _app_logger.handlers:
-    _handler = logging.StreamHandler(sys.stdout)
-    _handler.setLevel(logging.INFO)
-    _handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s - %(message)s"))
-    _app_logger.addHandler(_handler)
-    _app_logger.propagate = False
-
-_security_logger = logging.getLogger("pixelvault.security")
-_security_logger.setLevel(logging.INFO)
-if not _security_logger.handlers:
-    _sec_handler = logging.StreamHandler(sys.stdout)
-    _sec_handler.setLevel(logging.INFO)
-    _sec_handler.setFormatter(logging.Formatter("%(message)s"))
-    _security_logger.addHandler(_sec_handler)
-    _security_logger.propagate = False
-
-
 _DEFAULT_SECRET = "dev-secret-key-change-in-production"
-_MIN_SECRET_LEN = 32  # 256 bits minimum for HS256
+_MIN_SECRET_LEN = 32
+
+
+def _configure_logging() -> None:
+    json_fmt = JsonFormatter()
+    app_env = os.getenv("APP_ENV", "development")
+
+    def _stdout_handler() -> logging.StreamHandler:
+        h = logging.StreamHandler(sys.stdout)
+        h.setFormatter(json_fmt)
+        return h
+
+    # pixelvault.request — one JSON line per HTTP request (middleware writes here)
+    _req = logging.getLogger("pixelvault.request")
+    _req.setLevel(logging.INFO)
+    if not _req.handlers:
+        _req.addHandler(_stdout_handler())
+        _req.propagate = False
+
+    # pixelvault.security — pre-encoded JSON from security_log._emit()
+    # JsonFormatter detects and flattens pre-encoded JSON messages.
+    _sec = logging.getLogger("pixelvault.security")
+    _sec.setLevel(logging.INFO)
+    if not _sec.handlers:
+        _sec.addHandler(_stdout_handler())
+        _sec.propagate = False
+
+    # pixelvault.frontend — client-side errors posted via /api/v1/client-logs
+    # In production, writes to a file tailed by the CloudWatch Agent.
+    # In development, writes to stdout so docker compose logs shows it.
+    _fe = logging.getLogger("pixelvault.frontend")
+    _fe.setLevel(logging.DEBUG)
+    if not _fe.handlers:
+        if app_env == "production":
+            log_dir = "/var/log/pixelvault"
+            os.makedirs(log_dir, exist_ok=True)
+            fh = logging.handlers.RotatingFileHandler(
+                f"{log_dir}/frontend-client.log",
+                maxBytes=10 * 1024 * 1024,  # 10 MB
+                backupCount=3,
+                encoding="utf-8",
+            )
+            fh.setFormatter(json_fmt)
+            _fe.addHandler(fh)
+        else:
+            _fe.addHandler(_stdout_handler())
+        _fe.propagate = False
+
+    # uvicorn.error — startup/shutdown messages and unhandled exceptions
+    _uv_err = logging.getLogger("uvicorn.error")
+    _uv_err.setLevel(logging.INFO)
+    if not _uv_err.handlers:
+        _uv_err.addHandler(_stdout_handler())
+        _uv_err.propagate = False
+
+    # uvicorn.access — suppressed: RequestLoggingMiddleware replaces it with
+    # richer structured output. Keeping both would double-log every request.
+    _uv_acc = logging.getLogger("uvicorn.access")
+    _uv_acc.setLevel(logging.CRITICAL)
+    _uv_acc.propagate = False
+
+
+_configure_logging()
 
 
 @asynccontextmanager
@@ -60,13 +104,14 @@ async def lifespan(app: FastAPI):
                 "Use secrets.token_hex(32) to generate a 64-char hex string."
             )
     yield
-    # Shutdown: dispose engine
     from app.database import engine
 
     await engine.dispose()
 
 
 def create_app() -> FastAPI:
+    from app.middleware.request_logging import RequestLoggingMiddleware
+
     app = FastAPI(
         title="Pixel Vault API",
         version="1.0.0",
@@ -76,6 +121,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # RequestLoggingMiddleware must be added before CORS so it captures the
+    # final status code after all middleware has run.
+    app.add_middleware(RequestLoggingMiddleware)
     add_cors(app)
     _register_exception_handlers(app)
     _register_routers(app)
@@ -142,7 +190,7 @@ def _register_exception_handlers(app: FastAPI) -> None:
 
 
 def _register_routers(app: FastAPI) -> None:
-    from app.api.v1 import admin, albums, auth, media, shares
+    from app.api.v1 import admin, albums, auth, client_logs, media, shares
 
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(admin.router, prefix="/api/v1")
@@ -150,6 +198,7 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(albums.router, prefix="/api/v1")
     app.include_router(shares.router, prefix="/api/v1")
     app.include_router(shares.public_router, prefix="/api/v1")
+    app.include_router(client_logs.router, prefix="/api/v1")
 
     @app.get("/health", tags=["health"])
     async def health():

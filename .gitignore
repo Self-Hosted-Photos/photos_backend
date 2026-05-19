@@ -1,3 +1,8 @@
+# ─── Local-only files (planning, handoff docs) ───────────────────────────────
+# Not deployment artifacts — session notes, sprint tracking.
+# Delete from GitHub manually if previously committed.
+_local/
+
 # ─── Python ──────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
